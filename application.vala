@@ -129,7 +129,11 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		}
 		size_t column = (size_t)Math.round(event.x / char_width);
 		size_t row = (size_t)((event.y + _vadjustment.value) / line_height);
-		editor.set_cursor(column, row);
+		bool modify_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.MODIFY_SELECTION)) != 0;
+		if (modify_selection)
+			editor.toggle_cursor(column, row);
+		else
+			editor.set_cursor(column, row);
 		update();
 		return Gdk.EVENT_STOP;
 	}
