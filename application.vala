@@ -114,6 +114,11 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			update();
 			return Gdk.EVENT_STOP;
 		}
+		if (event.keyval == Gdk.Key.Return) {
+			editor.insert("\n");
+			update();
+			return Gdk.EVENT_STOP;
+		}
 		return Gdk.EVENT_PROPAGATE;
 	}
 	public override bool key_release_event(Gdk.EventKey event) {
