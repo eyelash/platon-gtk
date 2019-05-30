@@ -9,5 +9,6 @@ executable(
 		dependency('gtk+-3.0'),
 		dependency('json-glib-1.0'),
 	],
-	include_directories: include_directories('core')
+	include_directories: include_directories('core'),
+	override_options: ['cpp_std=c++17']
 )
