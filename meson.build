@@ -4,7 +4,11 @@ executable(
 	meson.project_name(),
 	'core/c_api.cpp',
 	'platon.vapi',
-	'application.vala',
+	'src/Application.vala',
+	'src/EditView.vala',
+	'src/Line.vala',
+	'src/Theme.vala',
+	'src/Window.vala',
 	dependencies: [
 		dependency('gtk+-3.0'),
 		dependency('json-glib-1.0'),
