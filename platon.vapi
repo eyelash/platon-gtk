@@ -9,6 +9,8 @@ namespace Platon {
 		public void backspace();
 		public void set_cursor(size_t column, size_t row);
 		public void toggle_cursor(size_t column, size_t row);
+		public void move_left();
+		public void move_right();
 		public unowned string get_theme();
 	}
 }
