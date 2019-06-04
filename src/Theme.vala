@@ -1,7 +1,12 @@
 class Theme: Object {
+	public struct Style {
+		Gdk.RGBA color;
+		Pango.Weight weight;
+		bool italic;
+	}
 	public Gdk.RGBA background;
 	public Gdk.RGBA cursor;
-	public Gdk.RGBA[] text;
+	public Style[] styles;
 	private static Gdk.RGBA decode_color(Json.Array color) {
 		int64 r = color.get_int_element(0);
 		int64 g = color.get_int_element(1);
@@ -21,13 +26,21 @@ class Theme: Object {
 		var color = theme.get_array_member(color_name);
 		return decode_color(color);
 	}
+	private static Style get_style(Json.Object style) {
+		return Style() {
+			color = decode_color(style.get_array_member("color")),
+			weight = (Pango.Weight)style.get_int_member("weight"),
+			italic = style.get_boolean_member("italic")
+		};
+	}
+
 	public Theme(Json.Object theme) {
 		background = get_color(theme, "background");
 		cursor = get_color(theme, "cursor");
-		var json_text = theme.get_array_member("text");
-		text.resize((int)json_text.get_length());
-		for (uint i = 0; i < json_text.get_length(); i++) {
-			text[i] = decode_color(json_text.get_array_element(i));
+		var json_styles = theme.get_array_member("styles");
+		styles.resize((int)json_styles.get_length());
+		for (uint i = 0; i < json_styles.get_length(); i++) {
+			styles[i] = get_style(json_styles.get_object_element(i));
 		}
 	}
 }

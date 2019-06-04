@@ -2,7 +2,8 @@
 namespace Platon {
 	[Compact]
 	public class Editor {
-		public Editor(string path);
+		public Editor();
+		public Editor.from_file(string path);
 		public size_t get_total_lines();
 		public unowned string render(size_t first_line, size_t last_line);
 		public void insert(string text);
@@ -12,5 +13,6 @@ namespace Platon {
 		public void move_left();
 		public void move_right();
 		public unowned string get_theme();
+		public void save(string path);
 	}
 }

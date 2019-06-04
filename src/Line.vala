@@ -13,6 +13,20 @@ class Line: Object {
 		attributes.insert((owned)attribute);
 	}
 
+	private static void set_weight(Pango.AttrList attributes, uint start_index, uint end_index, Pango.Weight weight) {
+		var attribute = Pango.attr_weight_new(weight);
+		attribute.start_index = start_index;
+		attribute.end_index = end_index;
+		attributes.insert((owned)attribute);
+	}
+
+	private static void set_italic(Pango.AttrList attributes, uint start_index, uint end_index) {
+		var attribute = Pango.attr_style_new(Pango.Style.ITALIC);
+		attribute.start_index = start_index;
+		attribute.end_index = end_index;
+		attributes.insert((owned)attribute);
+	}
+
 	public Line(Pango.Context pango_context, Json.Object json_line, double char_width, Theme theme) {
 		layout = new Pango.Layout(pango_context);
 		layout.set_text(json_line.get_string_member("text"), -1);
@@ -28,13 +42,17 @@ class Line: Object {
 			uint span_start = (uint)span.get_int_element(0);
 			uint span_end = (uint)span.get_int_element(1);
 			uint index = (uint)span.get_int_element(2);
-			set_color(attributes, span_start, span_end, theme.text[index]);
+			set_color(attributes, span_start, span_end, theme.styles[index].color);
+			set_weight(attributes, span_start, span_end, theme.styles[index].weight);
+			if (theme.styles[index].italic) {
+				set_italic(attributes, span_start, span_end);
+			}
 		}
 		layout.set_attributes(attributes);
 	}
 
 	public void draw(Cairo.Context cr, double y, double line_height, Theme theme) {
-		Gdk.cairo_set_source_rgba(cr, theme.text[0]);
+		Gdk.cairo_set_source_rgba(cr, theme.styles[0].color);
 		cr.move_to(0, y);
 		Pango.cairo_show_layout(cr, layout);
 		foreach (double cursor in cursors) {

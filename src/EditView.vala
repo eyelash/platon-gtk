@@ -31,7 +31,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 	}
 	
 	public EditView(string path) {
-		editor = new Platon.Editor(path);
+		editor = new Platon.Editor.from_file(path);
 		theme = new Theme(Json.from_string(editor.get_theme()).get_object());
 		im_context = new Gtk.IMMulticontext();
 		im_context.commit.connect(commit);
