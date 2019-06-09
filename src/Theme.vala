@@ -6,6 +6,8 @@ class Theme: Object {
 	}
 	public Gdk.RGBA background;
 	public Gdk.RGBA cursor;
+	public Style number;
+	public Style number_active;
 	public Style[] styles;
 	private static Gdk.RGBA decode_color(Json.Array color) {
 		int64 r = color.get_int_element(0);
@@ -37,6 +39,8 @@ class Theme: Object {
 	public Theme(Json.Object theme) {
 		background = get_color(theme, "background");
 		cursor = get_color(theme, "cursor");
+		number = get_style(theme.get_object_member("number"));
+		number_active = get_style(theme.get_object_member("number_active"));
 		var json_styles = theme.get_array_member("styles");
 		styles.resize((int)json_styles.get_length());
 		for (uint i = 0; i < json_styles.get_length(); i++) {

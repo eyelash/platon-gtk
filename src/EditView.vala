@@ -1,13 +1,16 @@
 class EditView: Gtk.DrawingArea, Gtk.Scrollable {
+	private const double PADDING = 12;
 	private Platon.Editor editor;
 	private Theme theme;
 	private Gtk.IMContext im_context;
 	private double char_width;
+	private double ascent;
 	private double line_height;
+	private double gutter_width;
 	private Line[] lines;
 	private size_t first_line;
 	private size_t last_line;
-	
+
 	// Gtk.Scrollable implementation
 	public Gtk.Adjustment hadjustment { construct set; get; }
 	public Gtk.ScrollablePolicy hscroll_policy { set; get; }
@@ -29,7 +32,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		border = Gtk.Border();
 		return false;
 	}
-	
+
 	public EditView(string path) {
 		editor = new Platon.Editor.from_file(path);
 		theme = new Theme(Json.from_string(editor.get_theme()).get_object());
@@ -38,47 +41,75 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		get_style_context().add_class(Gtk.STYLE_CLASS_MONOSPACE);
 		var metrics = get_pango_context().get_metrics(get_pango_context().get_font_description(), null);
 		char_width = Pango.units_to_double(metrics.get_approximate_char_width());
+		ascent = Pango.units_to_double(metrics.get_ascent());
 		line_height = Pango.units_to_double(metrics.get_ascent() + metrics.get_descent());
 		can_focus = true;
 		add_events(Gdk.EventMask.SMOOTH_SCROLL_MASK | Gdk.EventMask.BUTTON_PRESS_MASK);
 	}
-	
-	private void update() {
-		unowned string json = editor.render(first_line, last_line);
-		var json_lines = Json.from_string(json).get_array();
-		for (size_t i = 0; i < last_line - first_line; ++i) {
-			var json_line = json_lines.get_object_element((uint)i);
-			lines[i] = new Line(get_pango_context(), json_line, char_width, theme);
+
+	private static uint get_digits(size_t number) {
+		uint digits = 1;
+		while (number >= 10) {
+			digits += 1;
+			number /= 10;
 		}
-		queue_draw();
+		return digits;
+	}
+
+	private size_t get_column(double x) {
+		return (size_t)double.max((x - (PADDING + gutter_width + PADDING * 2)) / char_width, 0);
+	}
+
+	private size_t get_row(double y) {
+		return (size_t)double.max((y - PADDING) / line_height, 0);
+	}
+
+	private void update(bool update_lines = true) {
+		size_t total_lines = editor.get_total_lines();
+		gutter_width = get_digits(total_lines) * char_width;
+		_vadjustment.upper = double.max(total_lines * line_height + PADDING * 2, get_allocated_height());
+		if (_vadjustment.value > _vadjustment.upper - _vadjustment.page_size) {
+			// this will cause update to be called recursively
+			_vadjustment.value = _vadjustment.upper - _vadjustment.page_size;
+		}
+		size_t new_first_line = size_t.min(get_row(_vadjustment.value), total_lines);
+		size_t new_last_line = size_t.min(get_row(_vadjustment.value + get_allocated_height()) + 1, total_lines);
+		if (new_first_line != first_line || new_last_line != last_line) {
+			first_line = new_first_line;
+			last_line = new_last_line;
+			lines.resize((int)(last_line - first_line));
+			update_lines = true;
+		}
+		if (update_lines) {
+			unowned string json = editor.render(first_line, last_line);
+			var json_lines = Json.from_string(json).get_array();
+			for (uint i = 0; i < lines.length; ++i) {
+				var json_line = json_lines.get_object_element(i);
+				lines[i] = new Line(get_pango_context(), json_line, char_width, theme);
+			}
+			queue_draw();
+		}
 	}
 
 	public override bool draw(Cairo.Context cr) {
 		Gdk.cairo_set_source_rgba(cr, theme.background);
 		cr.paint();
-		for (size_t i = 0; i < last_line - first_line; ++i) {
-			double y = (first_line + i) * line_height - _vadjustment.value;
-			lines[i].draw(cr, y, line_height, theme);
+		for (uint i = 0; i < lines.length; ++i) {
+			double y = PADDING + (first_line + i) * line_height - _vadjustment.value;
+			lines[i].draw(cr, PADDING + gutter_width + PADDING * 2, y, ascent, line_height, theme);
+			lines[i].draw_number(cr, PADDING + gutter_width, y, ascent, theme);
 		}
 		return Gdk.EVENT_STOP;
 	}
 
 	private void scroll() {
-		size_t new_first_line = (size_t)(_vadjustment.value / line_height);
-		size_t new_last_line = (size_t)((_vadjustment.value + get_allocated_height()) / line_height) + 1;
-		if (new_first_line == first_line && new_last_line == last_line) {
-			return;
-		}
-		first_line = new_first_line;
-		last_line = new_last_line;
-		lines.resize((int)(last_line - first_line));
-		update();
+		update(false);
 	}
 
 	public override void size_allocate(Gtk.Allocation allocation) {
 		base.size_allocate(allocation);
 		_vadjustment.page_size = allocation.height;
-		scroll();
+		update(false);
 	}
 
 	private void commit(string text) {
@@ -122,8 +153,8 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		if (focus_on_click && !has_focus) {
 			grab_focus();
 		}
-		size_t column = (size_t)Math.round(event.x / char_width);
-		size_t row = (size_t)((event.y + _vadjustment.value) / line_height);
+		size_t column = get_column(event.x);
+		size_t row = get_row(event.y + _vadjustment.value);
 		bool modify_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.MODIFY_SELECTION)) != 0;
 		if (modify_selection)
 			editor.toggle_cursor(column, row);
