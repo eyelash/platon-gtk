@@ -5,6 +5,7 @@ class Theme: Object {
 		bool italic;
 	}
 	public Gdk.RGBA background;
+	public Gdk.RGBA selection;
 	public Gdk.RGBA cursor;
 	public Style number;
 	public Style number_active;
@@ -38,6 +39,7 @@ class Theme: Object {
 
 	public Theme(Json.Object theme) {
 		background = get_color(theme, "background");
+		selection = get_color(theme, "selection");
 		cursor = get_color(theme, "cursor");
 		number = get_style(theme.get_object_member("number"));
 		number_active = get_style(theme.get_object_member("number_active"));

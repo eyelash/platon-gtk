@@ -10,8 +10,8 @@ namespace Platon {
 		public void backspace();
 		public void set_cursor(size_t column, size_t row);
 		public void toggle_cursor(size_t column, size_t row);
-		public void move_left();
-		public void move_right();
+		public void move_left(bool extend_selection);
+		public void move_right(bool extend_selection);
 		public unowned string get_theme();
 		public void save(string path);
 	}

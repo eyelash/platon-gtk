@@ -131,12 +131,14 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			return Gdk.EVENT_STOP;
 		}
 		if (event.keyval == Gdk.Key.Left) {
-			editor.move_left();
+			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
+			editor.move_left(extend_selection);
 			update();
 			return Gdk.EVENT_STOP;
 		}
 		if (event.keyval == Gdk.Key.Right) {
-			editor.move_right();
+			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
+			editor.move_right(extend_selection);
 			update();
 			return Gdk.EVENT_STOP;
 		}
