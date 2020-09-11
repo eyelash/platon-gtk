@@ -1,5 +1,6 @@
 class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 	private const double PADDING = 12;
+	private File file;
 	private Platon.Editor editor;
 	private Theme theme;
 	private Gtk.IMContext im_context;
@@ -33,8 +34,13 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		return false;
 	}
 
-	public EditView(owned Platon.Editor editor) {
-		this.editor = (owned)editor;
+	public EditView(File? file) {
+		this.file = file;
+		if (file != null) {
+			editor = new Platon.Editor.from_file(file.get_path());
+		} else {
+			editor = new Platon.Editor();
+		}
 		theme = new Theme(Json.from_string(editor.get_theme()).get_object());
 		im_context = new Gtk.IMMulticontext();
 		im_context.commit.connect(commit);
@@ -164,5 +170,17 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			editor.set_cursor(column, row);
 		update();
 		return Gdk.EVENT_STOP;
+	}
+
+	public bool save() {
+		if (file == null) {
+			return false;
+		}
+		editor.save(file.get_path());
+		return true;
+	}
+	public void save_as(File file) {
+		this.file = file;
+		editor.save(file.get_path());
 	}
 }
