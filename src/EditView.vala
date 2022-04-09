@@ -4,6 +4,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 	private Platon.Editor editor;
 	private Theme theme;
 	private Gtk.IMContext im_context;
+	private Pango.FontDescription font_description;
 	private double ascent;
 	private double line_height;
 	private double gutter_width;
@@ -44,7 +45,9 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		im_context = new Gtk.IMMulticontext();
 		im_context.commit.connect(commit);
 		get_style_context().add_class(Gtk.STYLE_CLASS_MONOSPACE);
-		var metrics = get_pango_context().get_metrics(get_pango_context().get_font_description(), null);
+		var settings = new Settings("org.gnome.desktop.interface");
+		font_description = Pango.FontDescription.from_string(settings.get_string("monospace-font-name"));
+		var metrics = get_pango_context().get_metrics(font_description, null);
 		ascent = Pango.units_to_double(metrics.get_ascent());
 		line_height = Pango.units_to_double(metrics.get_ascent() + metrics.get_descent());
 		can_focus = true;
@@ -75,6 +78,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		uint digits = get_digits(editor.get_total_lines());
 		var layout = new Pango.Layout(get_pango_context());
 		layout.set_text("%0*d".printf(digits, 0), -1);
+		layout.set_font_description(font_description);
 		Pango.Rectangle extents;
 		layout.get_line_readonly(0).get_pixel_extents(null, out extents);
 		gutter_width = extents.width;
@@ -101,7 +105,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			var json_lines = Json.from_string(json).get_array();
 			for (uint i = 0; i < lines.length; ++i) {
 				var json_line = json_lines.get_object_element(i);
-				lines[i] = new Line(get_pango_context(), json_line, theme);
+				lines[i] = new Line(get_pango_context(), font_description, json_line, theme);
 			}
 			queue_draw();
 		}

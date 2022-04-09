@@ -34,11 +34,13 @@ class Line: Object {
 		attributes.insert((owned)attribute);
 	}
 
-	public Line(Pango.Context pango_context, Json.Object json_line, Theme theme) {
+	public Line(Pango.Context pango_context, Pango.FontDescription font_description, Json.Object json_line, Theme theme) {
 		layout = new Pango.Layout(pango_context);
 		layout.set_text(json_line.get_string_member("text"), -1);
+		layout.set_font_description(font_description);
 		number = new Pango.Layout(pango_context);
 		number.set_text(json_line.get_int_member("number").to_string(), -1);
+		number.set_font_description(font_description);
 		var json_cursors = json_line.get_array_member("cursors");
 		cursors.resize((int)json_cursors.get_length());
 		for (uint i = 0; i < json_cursors.get_length(); ++i) {
