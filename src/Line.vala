@@ -34,7 +34,7 @@ class Line: Object {
 		attributes.insert((owned)attribute);
 	}
 
-	public Line(Pango.Context pango_context, Json.Object json_line, double char_width, Theme theme) {
+	public Line(Pango.Context pango_context, Json.Object json_line, Theme theme) {
 		layout = new Pango.Layout(pango_context);
 		layout.set_text(json_line.get_string_member("text"), -1);
 		number = new Pango.Layout(pango_context);
@@ -42,7 +42,7 @@ class Line: Object {
 		var json_cursors = json_line.get_array_member("cursors");
 		cursors.resize((int)json_cursors.get_length());
 		for (uint i = 0; i < json_cursors.get_length(); ++i) {
-			cursors[i] = json_cursors.get_int_element(i) * char_width;
+			cursors[i] = index_to_x((int)json_cursors.get_int_element(i));
 		}
 		var spans = json_line.get_array_member("spans");
 		var attributes = new Pango.AttrList();
@@ -62,8 +62,8 @@ class Line: Object {
 		backgrounds.resize((int)selections.get_length());
 		for (uint i = 0; i < selections.get_length(); ++i) {
 			var selection = selections.get_array_element(i);
-			backgrounds[i].x = selection.get_int_element(0) * char_width;
-			backgrounds[i].width = selection.get_int_element(1) * char_width - backgrounds[i].x;
+			backgrounds[i].x = index_to_x((int)selection.get_int_element(0));
+			backgrounds[i].width = index_to_x((int)selection.get_int_element(1)) - backgrounds[i].x;
 		}
 	}
 
@@ -94,5 +94,20 @@ class Line: Object {
 		}
 		cr.move_to(x - extents.width, y + ascent);
 		Pango.cairo_show_layout_line(cr, line);
+	}
+
+	public double index_to_x(int index) {
+		int x_pos;
+		layout.get_line_readonly(0).index_to_x(index, false, out x_pos);
+		return Pango.units_to_double(x_pos);
+	}
+
+	public int x_to_index(double x) {
+		int index, trailing;
+		layout.get_line_readonly(0).x_to_index(Pango.units_from_double(x), out index, out trailing);
+		for (; trailing > 0; trailing--) {
+			layout.get_text().get_next_char(ref index, null);
+		}
+		return index;
 	}
 }

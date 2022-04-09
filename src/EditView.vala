@@ -4,7 +4,6 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 	private Platon.Editor editor;
 	private Theme theme;
 	private Gtk.IMContext im_context;
-	private double char_width;
 	private double ascent;
 	private double line_height;
 	private double gutter_width;
@@ -46,7 +45,6 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		im_context.commit.connect(commit);
 		get_style_context().add_class(Gtk.STYLE_CLASS_MONOSPACE);
 		var metrics = get_pango_context().get_metrics(get_pango_context().get_font_description(), null);
-		char_width = Pango.units_to_double(metrics.get_approximate_char_width());
 		ascent = Pango.units_to_double(metrics.get_ascent());
 		line_height = Pango.units_to_double(metrics.get_ascent() + metrics.get_descent());
 		can_focus = true;
@@ -62,17 +60,29 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		return digits;
 	}
 
-	private size_t get_column(double x) {
-		return (size_t)double.max((x - (PADDING + gutter_width + PADDING * 2)) / char_width, 0);
-	}
-
 	private size_t get_row(double y) {
 		return (size_t)double.max((y - PADDING) / line_height, 0);
 	}
 
+	private size_t get_column(double x, size_t row) {
+		if (row - first_line >= lines.length) {
+			return 0;
+		}
+		return lines[row - first_line].x_to_index(x - (PADDING * 2 + gutter_width + PADDING * 2));
+	}
+
+	private void update_gutter_width() {
+		uint digits = get_digits(editor.get_total_lines());
+		var layout = new Pango.Layout(get_pango_context());
+		layout.set_text("%0*d".printf(digits, 0), -1);
+		Pango.Rectangle extents;
+		layout.get_line_readonly(0).get_pixel_extents(null, out extents);
+		gutter_width = extents.width;
+	}
+
 	private void update(bool update_lines = true) {
 		size_t total_lines = editor.get_total_lines();
-		gutter_width = get_digits(total_lines) * char_width;
+		update_gutter_width();
 		_vadjustment.upper = double.max(total_lines * line_height + PADDING * 2, get_allocated_height());
 		if (_vadjustment.value > _vadjustment.upper - _vadjustment.page_size) {
 			// this will cause update to be called recursively
@@ -91,7 +101,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			var json_lines = Json.from_string(json).get_array();
 			for (uint i = 0; i < lines.length; ++i) {
 				var json_line = json_lines.get_object_element(i);
-				lines[i] = new Line(get_pango_context(), json_line, char_width, theme);
+				lines[i] = new Line(get_pango_context(), json_line, theme);
 			}
 			queue_draw();
 		}
@@ -102,8 +112,8 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		cr.paint();
 		for (uint i = 0; i < lines.length; ++i) {
 			double y = PADDING + (first_line + i) * line_height - _vadjustment.value;
-			lines[i].draw(cr, PADDING + gutter_width + PADDING * 2, y, ascent, line_height, theme);
-			lines[i].draw_number(cr, PADDING + gutter_width, y, ascent, theme);
+			lines[i].draw(cr, PADDING * 2 + gutter_width + PADDING * 2, y, ascent, line_height, theme);
+			lines[i].draw_number(cr, PADDING * 2 + gutter_width, y, ascent, theme);
 		}
 		return Gdk.EVENT_STOP;
 	}
@@ -161,8 +171,8 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		if (focus_on_click && !has_focus) {
 			grab_focus();
 		}
-		size_t column = get_column(event.x);
 		size_t row = get_row(event.y + _vadjustment.value);
+		size_t column = get_column(event.x, row);
 		bool modify_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.MODIFY_SELECTION)) != 0;
 		if (modify_selection)
 			editor.toggle_cursor(column, row);
