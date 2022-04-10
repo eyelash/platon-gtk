@@ -114,10 +114,21 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 	public override bool draw(Cairo.Context cr) {
 		Gdk.cairo_set_source_rgba(cr, theme.background);
 		cr.paint();
+		double x = PADDING * 2 + gutter_width + PADDING * 2;
+		double line_x = PADDING * 2 + gutter_width;
+		Gdk.cairo_set_source_rgba(cr, theme.number_background);
+		cr.rectangle(0, 0, x, get_allocated_height());
+		cr.fill();
 		for (uint i = 0; i < lines.length; ++i) {
 			double y = PADDING + (first_line + i) * line_height - _vadjustment.value;
-			lines[i].draw(cr, PADDING * 2 + gutter_width + PADDING * 2, y, ascent, line_height, theme);
-			lines[i].draw_number(cr, PADDING * 2 + gutter_width, y, ascent, theme);
+			lines[i].draw_background(cr, x, y, get_allocated_width() - x, line_height, theme);
+			lines[i].draw_number_background(cr, y, x, line_height, theme);
+		}
+		for (uint i = 0; i < lines.length; ++i) {
+			double y = PADDING + (first_line + i) * line_height - _vadjustment.value;
+			lines[i].draw(cr, x, y + ascent, theme);
+			lines[i].draw_cursors(cr, x, y, line_height, theme);
+			lines[i].draw_number(cr, line_x, y + ascent, theme);
 		}
 		return Gdk.EVENT_STOP;
 	}

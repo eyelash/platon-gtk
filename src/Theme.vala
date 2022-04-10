@@ -5,8 +5,11 @@ class Theme: Object {
 		bool italic;
 	}
 	public Gdk.RGBA background;
+	public Gdk.RGBA background_active;
 	public Gdk.RGBA selection;
 	public Gdk.RGBA cursor;
+	public Gdk.RGBA number_background;
+	public Gdk.RGBA number_background_active;
 	public Style number;
 	public Style number_active;
 	public Style[] styles;
@@ -39,8 +42,11 @@ class Theme: Object {
 
 	public Theme(Json.Object theme) {
 		background = get_color(theme, "background");
+		background_active = get_color(theme, "background_active");
 		selection = get_color(theme, "selection");
 		cursor = get_color(theme, "cursor");
+		number_background = get_color(theme, "number_background");
+		number_background_active = get_color(theme, "number_background_active");
 		number = get_style(theme.get_object_member("number"));
 		number_active = get_style(theme.get_object_member("number_active"));
 		var json_styles = theme.get_array_member("styles");

@@ -7,7 +7,7 @@ class Line: Object {
 	private Pango.Layout layout;
 	private Pango.Layout number;
 	private double[] cursors;
-	private Background[] backgrounds;
+	private Background[] selections;
 
 	private static void set_color(Pango.AttrList attributes, uint start_index, uint end_index, Gdk.RGBA color) {
 		var attribute = Pango.attr_foreground_new((uint16)(color.red*uint16.MAX), (uint16)(color.green*uint16.MAX), (uint16)(color.blue*uint16.MAX));
@@ -60,24 +60,35 @@ class Line: Object {
 			}
 		}
 		layout.set_attributes(attributes);
-		var selections = json_line.get_array_member("selections");
-		backgrounds.resize((int)selections.get_length());
-		for (uint i = 0; i < selections.get_length(); ++i) {
-			var selection = selections.get_array_element(i);
-			backgrounds[i].x = index_to_x((int)selection.get_int_element(0));
-			backgrounds[i].width = index_to_x((int)selection.get_int_element(1)) - backgrounds[i].x;
+		var json_selections = json_line.get_array_member("selections");
+		selections.resize((int)json_selections.get_length());
+		for (uint i = 0; i < json_selections.get_length(); ++i) {
+			var selection = json_selections.get_array_element(i);
+			selections[i].x = index_to_x((int)selection.get_int_element(0));
+			selections[i].width = index_to_x((int)selection.get_int_element(1)) - selections[i].x;
 		}
 	}
 
-	public void draw(Cairo.Context cr, double x, double y, double ascent, double line_height, Theme theme) {
-		Gdk.cairo_set_source_rgba(cr, theme.selection);
-		foreach (var background in backgrounds) {
-			cr.rectangle(x + background.x, y, background.width, line_height);
+	public void draw_background(Cairo.Context cr, double x, double y, double width, double line_height, Theme theme) {
+		if (cursors.length > 0 || selections.length > 0) {
+			Gdk.cairo_set_source_rgba(cr, theme.background_active);
+			cr.rectangle(x, y, width, line_height);
 			cr.fill();
 		}
+		Gdk.cairo_set_source_rgba(cr, theme.selection);
+		foreach (var selection in selections) {
+			cr.rectangle(x + selection.x, y, selection.width, line_height);
+			cr.fill();
+		}
+	}
+
+	public void draw(Cairo.Context cr, double x, double y, Theme theme) {
 		Gdk.cairo_set_source_rgba(cr, theme.styles[0].color);
-		cr.move_to(x, y + ascent);
+		cr.move_to(x, y);
 		Pango.cairo_show_layout_line(cr, layout.get_line_readonly(0));
+	}
+
+	public void draw_cursors(Cairo.Context cr, double x, double y, double line_height, Theme theme) {
 		Gdk.cairo_set_source_rgba(cr, theme.cursor);
 		foreach (double cursor in cursors) {
 			cr.rectangle(x + cursor - 1, y, 2, line_height);
@@ -85,16 +96,24 @@ class Line: Object {
 		}
 	}
 
-	public void draw_number(Cairo.Context cr, double x, double y, double ascent, Theme theme) {
+	public void draw_number_background(Cairo.Context cr, double y, double width, double line_height, Theme theme) {
+		if (cursors.length > 0 || selections.length > 0) {
+			Gdk.cairo_set_source_rgba(cr, theme.number_background_active);
+			cr.rectangle(0, y, width, line_height);
+			cr.fill();
+		}
+	}
+
+	public void draw_number(Cairo.Context cr, double x, double y, Theme theme) {
 		unowned Pango.LayoutLine line = number.get_line_readonly(0);
 		Pango.Rectangle extents;
 		line.get_pixel_extents(null, out extents);
-		if (cursors.length > 0) {
+		if (cursors.length > 0 || selections.length > 0) {
 			Gdk.cairo_set_source_rgba(cr, theme.number_active.color);
 		} else {
 			Gdk.cairo_set_source_rgba(cr, theme.number.color);
 		}
-		cr.move_to(x - extents.width, y + ascent);
+		cr.move_to(x - extents.width, y);
 		Pango.cairo_show_layout_line(cr, line);
 	}
 
