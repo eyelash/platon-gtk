@@ -1,4 +1,4 @@
-project('platon-gtk', ['vala', 'c', 'cpp'])
+project('platon-gtk', ['vala', 'c', 'cpp'], default_options: ['b_ndebug=if-release'])
 
 executable(
 	meson.project_name(),

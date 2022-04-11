@@ -6,13 +6,21 @@ namespace Platon {
 		public Editor.from_file(string path);
 		public size_t get_total_lines();
 		public unowned string render(size_t first_line, size_t last_line);
-		public void insert(string text);
-		public void backspace();
+		public void insert_text(string text);
+		public void insert_newline();
+		public void delete_backward();
+		public void delete_forward();
 		public void set_cursor(size_t column, size_t row);
 		public void toggle_cursor(size_t column, size_t row);
 		public void move_left(bool extend_selection);
 		public void move_right(bool extend_selection);
+		public void move_up(bool extend_selection);
+		public void move_down(bool extend_selection);
+		public void move_to_beginning_of_line(bool extend_selection);
+		public void move_to_end_of_line(bool extend_selection);
 		public unowned string get_theme();
+		public unowned string copy();
+		public void paste(string text);
 		public void save(string path);
 	}
 }

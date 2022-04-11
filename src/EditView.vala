@@ -144,7 +144,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 	}
 
 	private void commit(string text) {
-		editor.insert(text);
+		editor.insert_text(text);
 		update();
 	}
 	public override bool key_press_event(Gdk.EventKey event) {
@@ -152,12 +152,17 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			return Gdk.EVENT_STOP;
 		}
 		if (event.keyval == Gdk.Key.BackSpace) {
-			editor.backspace();
+			editor.delete_backward();
+			update();
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.Delete) {
+			editor.delete_forward();
 			update();
 			return Gdk.EVENT_STOP;
 		}
 		if (event.keyval == Gdk.Key.Return) {
-			editor.insert("\n");
+			editor.insert_newline();
 			update();
 			return Gdk.EVENT_STOP;
 		}
@@ -170,6 +175,30 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		if (event.keyval == Gdk.Key.Right) {
 			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
 			editor.move_right(extend_selection);
+			update();
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.Up) {
+			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
+			editor.move_up(extend_selection);
+			update();
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.Down) {
+			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
+			editor.move_down(extend_selection);
+			update();
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.Home) {
+			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
+			editor.move_to_beginning_of_line(extend_selection);
+			update();
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.End) {
+			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
+			editor.move_to_end_of_line(extend_selection);
 			update();
 			return Gdk.EVENT_STOP;
 		}
