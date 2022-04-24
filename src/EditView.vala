@@ -63,15 +63,15 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		return digits;
 	}
 
-	private size_t get_row(double y) {
+	private size_t get_line(double y) {
 		return (size_t)double.max((y - PADDING) / line_height, 0);
 	}
 
-	private size_t get_column(double x, size_t row) {
-		if (row - first_line >= lines.length) {
+	private size_t get_column(double x, size_t line) {
+		if (line - first_line >= lines.length) {
 			return 0;
 		}
-		return lines[row - first_line].x_to_index(x - (PADDING * 2 + gutter_width + PADDING * 2));
+		return lines[line - first_line].x_to_index(x - (PADDING * 2 + gutter_width + PADDING * 2));
 	}
 
 	private void update_gutter_width() {
@@ -92,8 +92,8 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			// this will cause update to be called recursively
 			_vadjustment.value = _vadjustment.upper - _vadjustment.page_size;
 		}
-		size_t new_first_line = size_t.min(get_row(_vadjustment.value), total_lines);
-		size_t new_last_line = size_t.min(get_row(_vadjustment.value + get_allocated_height()) + 1, total_lines);
+		size_t new_first_line = size_t.min(get_line(_vadjustment.value), total_lines);
+		size_t new_last_line = size_t.min(get_line(_vadjustment.value + get_allocated_height()) + 1, total_lines);
 		if (new_first_line != first_line || new_last_line != last_line) {
 			first_line = new_first_line;
 			last_line = new_last_line;
@@ -202,6 +202,29 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 			update();
 			return Gdk.EVENT_STOP;
 		}
+		if (event.keyval == Gdk.Key.a && (event.state & Gdk.ModifierType.CONTROL_MASK) != 0) {
+			editor.select_all();
+			update();
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.c && (event.state & Gdk.ModifierType.CONTROL_MASK) != 0) {
+			get_clipboard(Gdk.SELECTION_CLIPBOARD).set_text(editor.copy(), -1);
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.x && (event.state & Gdk.ModifierType.CONTROL_MASK) != 0) {
+			get_clipboard(Gdk.SELECTION_CLIPBOARD).set_text(editor.cut(), -1);
+			update();
+			return Gdk.EVENT_STOP;
+		}
+		if (event.keyval == Gdk.Key.v && (event.state & Gdk.ModifierType.CONTROL_MASK) != 0) {
+			get_clipboard(Gdk.SELECTION_CLIPBOARD).request_text((clipboard, text) => {
+				if (text != null) {
+					editor.paste(text);
+					update();
+				}
+			});
+			return Gdk.EVENT_STOP;
+		}
 		return Gdk.EVENT_PROPAGATE;
 	}
 	public override bool key_release_event(Gdk.EventKey event) {
@@ -215,13 +238,13 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		if (focus_on_click && !has_focus) {
 			grab_focus();
 		}
-		size_t row = get_row(event.y + _vadjustment.value);
-		size_t column = get_column(event.x, row);
+		size_t line = get_line(event.y + _vadjustment.value);
+		size_t column = get_column(event.x, line);
 		bool modify_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.MODIFY_SELECTION)) != 0;
 		if (modify_selection)
-			editor.toggle_cursor(column, row);
+			editor.toggle_cursor(column, line);
 		else
-			editor.set_cursor(column, row);
+			editor.set_cursor(column, line);
 		update();
 		return Gdk.EVENT_STOP;
 	}
