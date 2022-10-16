@@ -20,8 +20,8 @@ class Line: Object {
 		attributes.insert((owned)attribute);
 	}
 
-	private static void set_weight(Pango.AttrList attributes, uint start_index, uint end_index, Pango.Weight weight) {
-		var attribute = Pango.attr_weight_new(weight);
+	private static void set_bold(Pango.AttrList attributes, uint start_index, uint end_index) {
+		var attribute = Pango.attr_weight_new(Pango.Weight.BOLD);
 		attribute.start_index = start_index;
 		attribute.end_index = end_index;
 		attributes.insert((owned)attribute);
@@ -54,7 +54,9 @@ class Line: Object {
 			uint span_end = (uint)span.get_int_element(1);
 			uint index = (uint)span.get_int_element(2);
 			set_color(attributes, span_start, span_end, theme.styles[index].color);
-			set_weight(attributes, span_start, span_end, theme.styles[index].weight);
+			if (theme.styles[index].bold) {
+				set_bold(attributes, span_start, span_end);
+			}
 			if (theme.styles[index].italic) {
 				set_italic(attributes, span_start, span_end);
 			}

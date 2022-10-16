@@ -1,7 +1,7 @@
 class Theme: Object {
 	public struct Style {
 		Gdk.RGBA color;
-		Pango.Weight weight;
+		bool bold;
 		bool italic;
 	}
 	public Gdk.RGBA background;
@@ -35,7 +35,7 @@ class Theme: Object {
 	private static Style get_style(Json.Object style) {
 		return Style() {
 			color = decode_color(style.get_array_member("color")),
-			weight = (Pango.Weight)style.get_int_member("weight"),
+			bold = style.get_boolean_member("bold"),
 			italic = style.get_boolean_member("italic")
 		};
 	}

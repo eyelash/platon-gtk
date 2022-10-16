@@ -4,6 +4,8 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 	private Platon.Editor editor;
 	private Theme theme;
 	private Gtk.IMContext im_context;
+	private Gtk.GestureMultiPress multipress_gesture;
+	private Gtk.GestureDrag drag_gesture;
 	private Pango.FontDescription font_description;
 	private double ascent;
 	private double line_height;
@@ -44,6 +46,10 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		theme = new Theme(Json.from_string(editor.get_theme()).get_object());
 		im_context = new Gtk.IMMulticontext();
 		im_context.commit.connect(commit);
+		multipress_gesture = new Gtk.GestureMultiPress(this);
+		multipress_gesture.pressed.connect(handle_pressed);
+		drag_gesture = new Gtk.GestureDrag(this);
+		drag_gesture.drag_update.connect(handle_drag_update);
 		get_style_context().add_class(Gtk.STYLE_CLASS_MONOSPACE);
 		var settings = new Settings("org.gnome.desktop.interface");
 		font_description = Pango.FontDescription.from_string(settings.get_string("monospace-font-name"));
@@ -51,7 +57,7 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		ascent = Pango.units_to_double(metrics.get_ascent());
 		line_height = Pango.units_to_double(metrics.get_ascent() + metrics.get_descent());
 		can_focus = true;
-		add_events(Gdk.EventMask.SMOOTH_SCROLL_MASK | Gdk.EventMask.BUTTON_PRESS_MASK);
+		add_events(Gdk.EventMask.SMOOTH_SCROLL_MASK);
 	}
 
 	private static uint get_digits(size_t number) {
@@ -168,13 +174,23 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		}
 		if (event.keyval == Gdk.Key.Left) {
 			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
-			editor.move_left(extend_selection);
+			if ((event.state & Gdk.ModifierType.CONTROL_MASK) != 0) {
+				editor.move_to_beginning_of_word(extend_selection);
+			}
+			else {
+				editor.move_left(extend_selection);
+			}
 			update();
 			return Gdk.EVENT_STOP;
 		}
 		if (event.keyval == Gdk.Key.Right) {
 			bool extend_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.EXTEND_SELECTION)) != 0;
-			editor.move_right(extend_selection);
+			if ((event.state & Gdk.ModifierType.CONTROL_MASK) != 0) {
+				editor.move_to_end_of_word(extend_selection);
+			}
+			else {
+				editor.move_right(extend_selection);
+			}
 			update();
 			return Gdk.EVENT_STOP;
 		}
@@ -234,19 +250,28 @@ class EditView: Gtk.DrawingArea, Gtk.Scrollable {
 		return Gdk.EVENT_PROPAGATE;
 	}
 
-	public override bool button_press_event(Gdk.EventButton event) {
-		if (focus_on_click && !has_focus) {
-			grab_focus();
-		}
-		size_t line = get_line(event.y + _vadjustment.value);
-		size_t column = get_column(event.x, line);
-		bool modify_selection = (event.state & get_modifier_mask(Gdk.ModifierIntent.MODIFY_SELECTION)) != 0;
+	private void handle_pressed(int n_press, double x, double y) {
+		grab_focus();
+		var event = multipress_gesture.get_last_event(multipress_gesture.get_current_sequence());
+		Gdk.ModifierType state;
+		event.get_state(out state);
+		size_t line = get_line(y + _vadjustment.value);
+		size_t column = get_column(x, line);
+		bool modify_selection = (state & get_modifier_mask(Gdk.ModifierIntent.MODIFY_SELECTION)) != 0;
 		if (modify_selection)
 			editor.toggle_cursor(column, line);
 		else
 			editor.set_cursor(column, line);
 		update();
-		return Gdk.EVENT_STOP;
+	}
+
+	private void handle_drag_update(double offset_x, double offset_y) {
+		double start_x, start_y;
+		drag_gesture.get_start_point(out start_x, out start_y);
+		size_t line = get_line(start_y + offset_y + _vadjustment.value);
+		size_t column = get_column(start_x + offset_x, line);
+		editor.extend_selection(column, line);
+		update();
 	}
 
 	public bool save() {
