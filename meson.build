@@ -3,6 +3,7 @@ project('platon-gtk', ['vala', 'c', 'cpp'], default_options: ['b_ndebug=if-relea
 executable(
 	meson.project_name(),
 	'core/c_api.cpp',
+	'core/prism/prism.cpp',
 	'platon.vapi',
 	'src/Application.vala',
 	'src/EditView.vala',
