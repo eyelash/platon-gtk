@@ -6,6 +6,7 @@ executable(
 	'core/prism/prism.cpp',
 	'application.c',
 	'window.c',
+	'editor_widget.cpp',
 	dependencies: [
 		dependency('gtk+-3.0'),
 	],

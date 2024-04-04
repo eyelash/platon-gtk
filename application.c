@@ -10,6 +10,7 @@ G_DEFINE_TYPE(PlatonApplication, platon_application, GTK_TYPE_APPLICATION)
 static void platon_application_activate(GApplication* application) {
 	PlatonApplication* self = PLATON_APPLICATION(application);
 	PlatonWindow* window = platon_window_new(GTK_APPLICATION(self));
+	platon_window_open_file(window, NULL);
 	gtk_window_present(GTK_WINDOW(window));
 }
 
@@ -17,6 +18,7 @@ static void platon_application_open(GApplication* application, GFile** files, gi
 	PlatonApplication* self = PLATON_APPLICATION(application);
 	for (gint i = 0; i < n_files; ++i) {
 		PlatonWindow* window = platon_window_new(GTK_APPLICATION(self));
+		platon_window_open_file(window, files[i]);
 		gtk_window_present(GTK_WINDOW(window));
 	}
 }
