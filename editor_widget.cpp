@@ -1,5 +1,8 @@
 #include "editor_widget.h"
 #include "core/editor.hpp"
+#include <cmath>
+
+#define LINE_HEIGHT_FACTOR 1.5
 
 typedef struct {
 	GtkAdjustment *hadjustment;
@@ -7,6 +10,10 @@ typedef struct {
 	GtkScrollablePolicy hscroll_policy;
 	GtkScrollablePolicy vscroll_policy;
 	Editor* editor;
+	PangoFontDescription* font_description;
+	double ascent;
+	double line_height;
+	double char_width;
 } PlatonEditorWidgetPrivate;
 
 G_DEFINE_TYPE_WITH_CODE(PlatonEditorWidget, platon_editor_widget, GTK_TYPE_WIDGET,
@@ -22,6 +29,22 @@ typedef enum {
 	PROP_VSCROLL_POLICY,
 	N_PROPERTIES
 } PlatonEditorWidgetProperty;
+
+static void update(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	if (priv->vadjustment) {
+		const double page_size = gtk_widget_get_allocated_height(GTK_WIDGET(self));
+		const double upper = std::max(priv->editor->get_total_lines() * priv->line_height, page_size);
+		const double max_value = std::max(upper - page_size, 0.0);
+		g_object_freeze_notify(G_OBJECT(priv->vadjustment));
+		gtk_adjustment_set_page_size(priv->vadjustment, page_size);
+		gtk_adjustment_set_upper(priv->vadjustment, upper);
+		if (gtk_adjustment_get_value(priv->vadjustment) > max_value) {
+			gtk_adjustment_set_value(priv->vadjustment, max_value);
+		}
+		g_object_thaw_notify(G_OBJECT(priv->vadjustment));
+	}
+}
 
 static void platon_editor_widget_get_property(GObject* object, guint property_id, GValue* value, GParamSpec* pspec) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(object);
@@ -54,6 +77,7 @@ static void platon_editor_widget_set_property(GObject* object, guint property_id
 		break;
 	case PROP_VADJUSTMENT:
 		priv->vadjustment = GTK_ADJUSTMENT(g_value_get_object(value));
+		update(self);
 		break;
 	case PROP_HSCROLL_POLICY:
 		priv->hscroll_policy = (GtkScrollablePolicy)g_value_get_enum(value);
@@ -93,10 +117,12 @@ static void platon_editor_widget_unrealize(GtkWidget* widget) {
 }
 
 static void platon_editor_widget_size_allocate(GtkWidget* widget, GtkAllocation* allocation) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
 	gtk_widget_set_allocation(widget, allocation);
 	if (gtk_widget_get_realized(widget)) {
 		gdk_window_move_resize(gtk_widget_get_window(widget), allocation->x, allocation->y, allocation->width, allocation->height);
 	}
+	update(self);
 }
 
 static void set_source(cairo_t* cr, const Color& color) {
@@ -106,9 +132,26 @@ static void set_source(cairo_t* cr, const Color& color) {
 static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	const double allocated_height = gtk_widget_get_allocated_height(widget);
+	const double vadjustment = gtk_adjustment_get_value(priv->vadjustment);
+	const double max_row = priv->editor->get_total_lines();
+	const size_t start_row = std::clamp(std::floor(vadjustment / priv->line_height), 0.0, max_row);
+	const size_t end_row = std::clamp(std::ceil((allocated_height + vadjustment) / priv->line_height), 0.0, max_row);
 	const Theme& theme = priv->editor->get_theme();
+	const auto lines = priv->editor->render(start_row, end_row);
 	set_source(cr, theme.background);
 	cairo_paint(cr);
+	set_source(cr, theme.styles[0].color);
+	for (size_t row = start_row; row < end_row; ++row) {
+		const double y = row * priv->line_height - vadjustment;
+		PangoLayout* layout = pango_layout_new(gtk_widget_get_pango_context(GTK_WIDGET(self)));
+		pango_layout_set_font_description(layout, priv->font_description);
+		pango_layout_set_text(layout, lines[row - start_row].text.c_str(), -1);
+		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+		cairo_move_to(cr, 0.0, y + priv->ascent);
+		pango_cairo_show_layout_line(cr, layout_line);
+		g_object_unref(layout);
+	}
 	return GDK_EVENT_STOP;
 }
 
@@ -139,6 +182,24 @@ static void platon_editor_widget_class_init(PlatonEditorWidgetClass* klass) {
 }
 
 static void platon_editor_widget_init(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	GSettings* settings = g_settings_new("org.gnome.desktop.interface");
+	gchar* monospace_font_name = g_settings_get_string(settings, "monospace-font-name");
+	g_object_unref(settings);
+	priv->font_description = pango_font_description_from_string(monospace_font_name);
+	g_free(monospace_font_name);
+	PangoFontMetrics* metrics = pango_context_get_metrics(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, NULL);
+	double font_size = pango_units_to_double(pango_font_description_get_size(priv->font_description));
+	if (!pango_font_description_get_size_is_absolute(priv->font_description)) {
+		font_size = font_size / 72.0 * 96.0;
+	}
+	const double ascent = pango_units_to_double(pango_font_metrics_get_ascent(metrics));
+	const double descent = pango_units_to_double(pango_font_metrics_get_descent(metrics));
+	priv->line_height = std::round(font_size * LINE_HEIGHT_FACTOR);
+	priv->ascent = std::round(ascent + (priv->line_height - (ascent + descent)) / 2.0);
+	priv->char_width = pango_units_to_double(pango_font_metrics_get_approximate_char_width(metrics));
+	pango_font_metrics_unref(metrics);
+	gtk_widget_add_events(GTK_WIDGET(self), GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
 }
 
 PlatonEditorWidget* platon_editor_widget_new(GFile* file) {
