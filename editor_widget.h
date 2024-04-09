@@ -9,6 +9,15 @@ G_DECLARE_DERIVABLE_TYPE(PlatonEditorWidget, platon_editor_widget, PLATON, EDITO
 
 struct _PlatonEditorWidgetClass {
 	GtkWidgetClass parent_class;
+	void (*insert_newline)(PlatonEditorWidget* self);
+	void (*delete_backward)(PlatonEditorWidget* self);
+	void (*delete_forward)(PlatonEditorWidget* self);
+	void (*move_left)(PlatonEditorWidget* self, gboolean extend_selection);
+	void (*move_right)(PlatonEditorWidget* self, gboolean extend_selection);
+	void (*move_up)(PlatonEditorWidget* self, gboolean extend_selection);
+	void (*move_down)(PlatonEditorWidget* self, gboolean extend_selection);
+	void (*move_to_beginning_of_line)(PlatonEditorWidget* self, gboolean extend_selection);
+	void (*move_to_end_of_line)(PlatonEditorWidget* self, gboolean extend_selection);
 };
 
 PlatonEditorWidget* platon_editor_widget_new(GFile* file);

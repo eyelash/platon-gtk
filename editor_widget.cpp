@@ -18,6 +18,7 @@ typedef struct {
 	double ascent;
 	double line_height;
 	double char_width;
+	GtkIMContext* im_context;
 	GtkGesture* multipress_gesture;
 	GtkGesture* drag_gesture;
 } PlatonEditorWidgetPrivate;
@@ -232,6 +233,32 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	return GDK_EVENT_STOP;
 }
 
+static gboolean platon_editor_widget_key_press_event(GtkWidget* widget, GdkEventKey* event) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	if (GTK_WIDGET_CLASS(platon_editor_widget_parent_class)->key_press_event(widget, event) || gtk_im_context_filter_keypress(priv->im_context, event)) {
+		return GDK_EVENT_STOP;
+	}
+	return GDK_EVENT_PROPAGATE;
+}
+
+static gboolean platon_editor_widget_key_release_event(GtkWidget* widget, GdkEventKey* event) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	if (GTK_WIDGET_CLASS(platon_editor_widget_parent_class)->key_release_event(widget, event) || gtk_im_context_filter_keypress(priv->im_context, event)) {
+		return GDK_EVENT_STOP;
+	}
+	return GDK_EVENT_PROPAGATE;
+}
+
+static void handle_commit(GtkIMContext* im_context, gchar* text, gpointer user_data) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(user_data);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->insert_text(text);
+	update(self);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
 static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_press, gdouble x, gdouble y, gpointer user_data) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(user_data);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
@@ -283,11 +310,69 @@ static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, g
 	}
 }
 
+static void platon_editor_widget_insert_newline(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->insert_newline();
+	update(self);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_delete_backward(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->delete_backward();
+	update(self);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_delete_forward(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->delete_forward();
+	update(self);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_move_left(PlatonEditorWidget* self, gboolean extend_selection) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->move_left(extend_selection);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_move_right(PlatonEditorWidget* self, gboolean extend_selection) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->move_right(extend_selection);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_move_up(PlatonEditorWidget* self, gboolean extend_selection) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->move_up(extend_selection);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_move_down(PlatonEditorWidget* self, gboolean extend_selection) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->move_down(extend_selection);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_move_to_beginning_of_line(PlatonEditorWidget* self, gboolean extend_selection) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->move_to_beginning_of_line(extend_selection);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+static void platon_editor_widget_move_to_end_of_line(PlatonEditorWidget* self, gboolean extend_selection) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->move_to_end_of_line(extend_selection);
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
 static void platon_editor_widget_dispose(GObject* object) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(object);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	g_clear_object(&priv->drag_gesture);
 	g_clear_object(&priv->multipress_gesture);
+	g_clear_object(&priv->im_context);
 	G_OBJECT_CLASS(platon_editor_widget_parent_class)->dispose(object);
 }
 
@@ -311,6 +396,42 @@ static void platon_editor_widget_class_init(PlatonEditorWidgetClass* klass) {
 	GTK_WIDGET_CLASS(klass)->unrealize = platon_editor_widget_unrealize;
 	GTK_WIDGET_CLASS(klass)->size_allocate = platon_editor_widget_size_allocate;
 	GTK_WIDGET_CLASS(klass)->draw = platon_editor_widget_draw;
+	GTK_WIDGET_CLASS(klass)->key_press_event = platon_editor_widget_key_press_event;
+	GTK_WIDGET_CLASS(klass)->key_release_event = platon_editor_widget_key_release_event;
+	klass->insert_newline = platon_editor_widget_insert_newline;
+	klass->delete_backward = platon_editor_widget_delete_backward;
+	klass->delete_forward = platon_editor_widget_delete_forward;
+	klass->move_left = platon_editor_widget_move_left;
+	klass->move_right = platon_editor_widget_move_right;
+	klass->move_up = platon_editor_widget_move_up;
+	klass->move_down = platon_editor_widget_move_down;
+	klass->move_to_beginning_of_line = platon_editor_widget_move_to_beginning_of_line;
+	klass->move_to_end_of_line = platon_editor_widget_move_to_end_of_line;
+	g_signal_new("insert-newline", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, insert_newline), NULL, NULL, NULL, G_TYPE_NONE, 0);
+	g_signal_new("delete-backward", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, delete_backward), NULL, NULL, NULL, G_TYPE_NONE, 0);
+	g_signal_new("delete-forward", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, delete_forward), NULL, NULL, NULL, G_TYPE_NONE, 0);
+	g_signal_new("move-left", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_left), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
+	g_signal_new("move-right", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_right), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
+	g_signal_new("move-up", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_up), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
+	g_signal_new("move-down", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_down), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
+	g_signal_new("move-to-beginning-of-line", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_to_beginning_of_line), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
+	g_signal_new("move-to-end-of-line", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_to_end_of_line), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
+	GtkBindingSet* binding_set = gtk_binding_set_by_class(klass);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Return, (GdkModifierType)0, "insert-newline", 0);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_BackSpace, (GdkModifierType)0, "delete-backward", 0);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Delete, (GdkModifierType)0, "delete-forward", 0);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Left, (GdkModifierType)0, "move-left", 1, G_TYPE_BOOLEAN, FALSE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Left, GDK_SHIFT_MASK, "move-left", 1, G_TYPE_BOOLEAN, TRUE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Right, (GdkModifierType)0, "move-right", 1, G_TYPE_BOOLEAN, FALSE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Right, GDK_SHIFT_MASK, "move-right", 1, G_TYPE_BOOLEAN, TRUE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Up, (GdkModifierType)0, "move-up", 1, G_TYPE_BOOLEAN, FALSE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Up, GDK_SHIFT_MASK, "move-up", 1, G_TYPE_BOOLEAN, TRUE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Down, (GdkModifierType)0, "move-down", 1, G_TYPE_BOOLEAN, FALSE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Down, GDK_SHIFT_MASK, "move-down", 1, G_TYPE_BOOLEAN, TRUE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Home, (GdkModifierType)0, "move-to-beginning-of-line", 1, G_TYPE_BOOLEAN, FALSE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Home, GDK_SHIFT_MASK, "move-to-beginning-of-line", 1, G_TYPE_BOOLEAN, TRUE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_End, (GdkModifierType)0, "move-to-end-of-line", 1, G_TYPE_BOOLEAN, FALSE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_End, GDK_SHIFT_MASK, "move-to-end-of-line", 1, G_TYPE_BOOLEAN, TRUE);
 }
 
 static void platon_editor_widget_init(PlatonEditorWidget* self) {
@@ -331,11 +452,14 @@ static void platon_editor_widget_init(PlatonEditorWidget* self) {
 	priv->ascent = std::round(ascent + (priv->line_height - (ascent + descent)) / 2.0);
 	priv->char_width = pango_units_to_double(pango_font_metrics_get_approximate_char_width(metrics));
 	pango_font_metrics_unref(metrics);
+	priv->im_context = gtk_im_multicontext_new();
+	g_signal_connect_object(priv->im_context, "commit", G_CALLBACK(handle_commit), self, G_CONNECT_DEFAULT);
 	priv->multipress_gesture = gtk_gesture_multi_press_new(GTK_WIDGET(self));
 	g_signal_connect_object(priv->multipress_gesture, "pressed", G_CALLBACK(handle_pressed), self, G_CONNECT_DEFAULT);
 	g_signal_connect_object(priv->multipress_gesture, "released", G_CALLBACK(handle_released), self, G_CONNECT_DEFAULT);
 	priv->drag_gesture = gtk_gesture_drag_new(GTK_WIDGET(self));
 	g_signal_connect_object(priv->drag_gesture, "drag_update", G_CALLBACK(handle_drag_update), self, G_CONNECT_DEFAULT);
+	gtk_widget_set_can_focus(GTK_WIDGET(self), TRUE);
 	gtk_widget_add_events(GTK_WIDGET(self), GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
 }
 
