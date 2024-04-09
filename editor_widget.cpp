@@ -147,6 +147,32 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 		PangoLayout* layout = pango_layout_new(gtk_widget_get_pango_context(GTK_WIDGET(self)));
 		pango_layout_set_font_description(layout, priv->font_description);
 		pango_layout_set_text(layout, lines[row - start_row].text.c_str(), -1);
+		PangoAttrList* attrs = pango_attr_list_new();
+		for (const Span& span: lines[row - start_row].spans) {
+			const Style& style = theme.styles[span.style - Style::DEFAULT];
+			PangoAttribute* attr = pango_attr_foreground_new(style.color.r * G_MAXUINT16, style.color.g * G_MAXUINT16, style.color.b * G_MAXUINT16);
+			attr->start_index = span.start;
+			attr->end_index = span.end;
+			pango_attr_list_insert(attrs, attr);
+			attr = pango_attr_foreground_alpha_new(style.color.a * G_MAXUINT16);
+			attr->start_index = span.start;
+			attr->end_index = span.end;
+			pango_attr_list_insert(attrs, attr);
+			if (style.bold) {
+				attr = pango_attr_weight_new(PANGO_WEIGHT_BOLD);
+				attr->start_index = span.start;
+				attr->end_index = span.end;
+				pango_attr_list_insert(attrs, attr);
+			}
+			if (style.italic) {
+				attr = pango_attr_style_new(PANGO_STYLE_ITALIC);
+				attr->start_index = span.start;
+				attr->end_index = span.end;
+				pango_attr_list_insert(attrs, attr);
+			}
+		}
+		pango_layout_set_attributes(layout, attrs);
+		pango_attr_list_unref(attrs);
 		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
 		cairo_move_to(cr, 0.0, y + priv->ascent);
 		pango_cairo_show_layout_line(cr, layout_line);
