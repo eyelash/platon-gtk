@@ -2,6 +2,10 @@
 #include "core/editor.hpp"
 #include <cmath>
 
+#if !GLIB_CHECK_VERSION(2, 73, 2)
+#define G_CONNECT_DEFAULT ((GConnectFlags)0)
+#endif
+
 #define LINE_HEIGHT_FACTOR 1.5
 
 typedef struct {
@@ -14,6 +18,8 @@ typedef struct {
 	double ascent;
 	double line_height;
 	double char_width;
+	GtkGesture* multipress_gesture;
+	GtkGesture* drag_gesture;
 } PlatonEditorWidgetPrivate;
 
 G_DEFINE_TYPE_WITH_CODE(PlatonEditorWidget, platon_editor_widget, GTK_TYPE_WIDGET,
@@ -129,6 +135,62 @@ static void set_source(cairo_t* cr, const Color& color) {
 	cairo_set_source_rgba(cr, color.r, color.g, color.b, color.a);
 }
 
+static PangoLayout* create_layout(PlatonEditorWidget* self, const Theme& theme, const RenderedLine& line) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	PangoLayout* layout = pango_layout_new(gtk_widget_get_pango_context(GTK_WIDGET(self)));
+	pango_layout_set_font_description(layout, priv->font_description);
+	pango_layout_set_text(layout, line.text.c_str(), -1);
+	PangoAttrList* attrs = pango_attr_list_new();
+	for (const Span& span: line.spans) {
+		const Style& style = theme.styles[span.style - Style::DEFAULT];
+		PangoAttribute* attr = pango_attr_foreground_new(style.color.r * G_MAXUINT16, style.color.g * G_MAXUINT16, style.color.b * G_MAXUINT16);
+		attr->start_index = span.start;
+		attr->end_index = span.end;
+		pango_attr_list_insert(attrs, attr);
+		attr = pango_attr_foreground_alpha_new(style.color.a * G_MAXUINT16);
+		attr->start_index = span.start;
+		attr->end_index = span.end;
+		pango_attr_list_insert(attrs, attr);
+		if (style.bold) {
+			attr = pango_attr_weight_new(PANGO_WEIGHT_BOLD);
+			attr->start_index = span.start;
+			attr->end_index = span.end;
+			pango_attr_list_insert(attrs, attr);
+		}
+		if (style.italic) {
+			attr = pango_attr_style_new(PANGO_STYLE_ITALIC);
+			attr->start_index = span.start;
+			attr->end_index = span.end;
+			pango_attr_list_insert(attrs, attr);
+		}
+	}
+	pango_layout_set_attributes(layout, attrs);
+	pango_attr_list_unref(attrs);
+	return layout;
+}
+
+static double index_to_x(PangoLayoutLine* layout_line, std::size_t index) {
+	int x_pos;
+	pango_layout_line_index_to_x(layout_line, index, false, &x_pos);
+	return pango_units_to_double(x_pos);
+}
+
+static std::size_t x_to_index(const char* text, PangoLayoutLine* layout_line, double x) {
+	int index, trailing;
+	pango_layout_line_x_to_index(layout_line, pango_units_from_double(x), &index, &trailing);
+	const char* pointer = text + index;
+	for (; trailing > 0; trailing--) {
+		pointer = g_utf8_next_char(pointer);
+	}
+	return pointer - text;
+}
+
+static std::size_t x_to_index(PangoLayout* layout, double x) {
+	const char* text = pango_layout_get_text(layout);
+	PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+	return x_to_index(text, layout_line, x);
+}
+
 static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
@@ -139,49 +201,93 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	const size_t end_row = std::clamp(std::ceil((allocated_height + vadjustment) / priv->line_height), 0.0, max_row);
 	const Theme& theme = priv->editor->get_theme();
 	const auto lines = priv->editor->render(start_row, end_row);
+	// background
 	set_source(cr, theme.background);
 	cairo_paint(cr);
-	set_source(cr, theme.styles[0].color);
 	for (size_t row = start_row; row < end_row; ++row) {
 		const double y = row * priv->line_height - vadjustment;
-		PangoLayout* layout = pango_layout_new(gtk_widget_get_pango_context(GTK_WIDGET(self)));
-		pango_layout_set_font_description(layout, priv->font_description);
-		pango_layout_set_text(layout, lines[row - start_row].text.c_str(), -1);
-		PangoAttrList* attrs = pango_attr_list_new();
-		for (const Span& span: lines[row - start_row].spans) {
-			const Style& style = theme.styles[span.style - Style::DEFAULT];
-			PangoAttribute* attr = pango_attr_foreground_new(style.color.r * G_MAXUINT16, style.color.g * G_MAXUINT16, style.color.b * G_MAXUINT16);
-			attr->start_index = span.start;
-			attr->end_index = span.end;
-			pango_attr_list_insert(attrs, attr);
-			attr = pango_attr_foreground_alpha_new(style.color.a * G_MAXUINT16);
-			attr->start_index = span.start;
-			attr->end_index = span.end;
-			pango_attr_list_insert(attrs, attr);
-			if (style.bold) {
-				attr = pango_attr_weight_new(PANGO_WEIGHT_BOLD);
-				attr->start_index = span.start;
-				attr->end_index = span.end;
-				pango_attr_list_insert(attrs, attr);
-			}
-			if (style.italic) {
-				attr = pango_attr_style_new(PANGO_STYLE_ITALIC);
-				attr->start_index = span.start;
-				attr->end_index = span.end;
-				pango_attr_list_insert(attrs, attr);
-			}
-		}
-		pango_layout_set_attributes(layout, attrs);
-		pango_attr_list_unref(attrs);
+		PangoLayout* layout = create_layout(self, theme, lines[row - start_row]);
 		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+		// selections
+		set_source(cr, theme.selection);
+		for (const Range& selection: lines[row - start_row].selections) {
+			const double x = index_to_x(layout_line, selection.start);
+			const double width = index_to_x(layout_line, selection.end) - x;
+			cairo_rectangle(cr, x, y, width, priv->line_height);
+			cairo_fill(cr);
+		}
+		// text
 		cairo_move_to(cr, 0.0, y + priv->ascent);
+		set_source(cr, theme.styles[0].color);
 		pango_cairo_show_layout_line(cr, layout_line);
+		// cursors
+		set_source(cr, theme.cursor);
+		for (std::size_t cursor: lines[row - start_row].cursors) {
+			const double x = index_to_x(layout_line, cursor);
+			cairo_rectangle(cr, x - 1.0, y, 2.0, priv->line_height);
+			cairo_fill(cr);
+		}
 		g_object_unref(layout);
 	}
 	return GDK_EVENT_STOP;
 }
 
+static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_press, gdouble x, gdouble y, gpointer user_data) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(user_data);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	const double vadjustment = gtk_adjustment_get_value(priv->vadjustment);
+	gtk_widget_grab_focus(GTK_WIDGET(self));
+	GdkEventSequence* sequence = gtk_gesture_single_get_current_sequence(GTK_GESTURE_SINGLE(multipress_gesture));
+	const GdkEvent* event = gtk_gesture_get_last_event(GTK_GESTURE(multipress_gesture), sequence);
+	GdkModifierType state;
+	gdk_event_get_state(event, &state);
+	const bool modify_selection = state & gtk_widget_get_modifier_mask(GTK_WIDGET(self), GDK_MODIFIER_INTENT_MODIFY_SELECTION);
+	const bool extend_selection = state & gtk_widget_get_modifier_mask(GTK_WIDGET(self), GDK_MODIFIER_INTENT_EXTEND_SELECTION);
+	const std::size_t line = std::max((y + vadjustment) / priv->line_height, 0.0);
+	if (line < priv->editor->get_total_lines()) {
+		PangoLayout* layout = create_layout(self, priv->editor->get_theme(), priv->editor->render(line, line + 1)[0]);
+		const std::size_t column = x_to_index(layout, x);
+		g_object_unref(layout);
+		if (extend_selection) {
+			priv->editor->extend_selection(column, line);
+		}
+		else {
+			if (modify_selection) {
+				priv->editor->toggle_cursor(column, line);
+			}
+			else {
+				priv->editor->set_cursor(column, line);
+			}
+		}
+		gtk_widget_queue_draw(GTK_WIDGET(self));
+	}
+}
+
+static void handle_released(GtkGestureMultiPress* multipress_gesture, gint n_press, gdouble x, gdouble y, gpointer user_data) {
+
+}
+
+static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, gdouble offset_y, gpointer user_data) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(user_data);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	const double vadjustment = gtk_adjustment_get_value(priv->vadjustment);
+	double start_x, start_y;
+	gtk_gesture_drag_get_start_point(drag_gesture, &start_x, &start_y);
+	const std::size_t line = std::max((start_y + offset_y + vadjustment) / priv->line_height, 0.0);
+	if (line < priv->editor->get_total_lines()) {
+		PangoLayout* layout = create_layout(self, priv->editor->get_theme(), priv->editor->render(line, line + 1)[0]);
+		const std::size_t column = x_to_index(layout, start_x + offset_x);
+		g_object_unref(layout);
+		priv->editor->extend_selection(column, line);
+		gtk_widget_queue_draw(GTK_WIDGET(self));
+	}
+}
+
 static void platon_editor_widget_dispose(GObject* object) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(object);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	g_clear_object(&priv->drag_gesture);
+	g_clear_object(&priv->multipress_gesture);
 	G_OBJECT_CLASS(platon_editor_widget_parent_class)->dispose(object);
 }
 
@@ -225,6 +331,11 @@ static void platon_editor_widget_init(PlatonEditorWidget* self) {
 	priv->ascent = std::round(ascent + (priv->line_height - (ascent + descent)) / 2.0);
 	priv->char_width = pango_units_to_double(pango_font_metrics_get_approximate_char_width(metrics));
 	pango_font_metrics_unref(metrics);
+	priv->multipress_gesture = gtk_gesture_multi_press_new(GTK_WIDGET(self));
+	g_signal_connect_object(priv->multipress_gesture, "pressed", G_CALLBACK(handle_pressed), self, G_CONNECT_DEFAULT);
+	g_signal_connect_object(priv->multipress_gesture, "released", G_CALLBACK(handle_released), self, G_CONNECT_DEFAULT);
+	priv->drag_gesture = gtk_gesture_drag_new(GTK_WIDGET(self));
+	g_signal_connect_object(priv->drag_gesture, "drag_update", G_CALLBACK(handle_drag_update), self, G_CONNECT_DEFAULT);
 	gtk_widget_add_events(GTK_WIDGET(self), GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
 }
 
