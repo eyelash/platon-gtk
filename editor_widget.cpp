@@ -21,6 +21,7 @@ typedef struct {
 	GtkIMContext* im_context;
 	GtkGesture* multipress_gesture;
 	GtkGesture* drag_gesture;
+	double gutter_width;
 } PlatonEditorWidgetPrivate;
 
 G_DEFINE_TYPE_WITH_CODE(PlatonEditorWidget, platon_editor_widget, GTK_TYPE_WIDGET,
@@ -37,9 +38,19 @@ typedef enum {
 	N_PROPERTIES
 } PlatonEditorWidgetProperty;
 
+static std::size_t count_digits(std::size_t n) {
+	std::size_t digits = 1;
+	while (n >= 10) {
+		++digits;
+		n /= 10;
+	}
+	return digits;
+}
+
 static void update(PlatonEditorWidget* self) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	if (priv->vadjustment) {
+		priv->gutter_width = std::round(priv->char_width) * (4.0 + count_digits(priv->editor->get_total_lines()));
 		const double page_size = gtk_widget_get_allocated_height(GTK_WIDGET(self));
 		const double upper = std::max(priv->editor->get_total_lines() * priv->line_height, page_size);
 		const double max_value = std::max(upper - page_size, 0.0);
@@ -170,6 +181,16 @@ static PangoLayout* create_layout(PlatonEditorWidget* self, const Theme& theme, 
 	return layout;
 }
 
+static PangoLayout* create_layout(PlatonEditorWidget* self, std::size_t number) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	PangoLayout* layout = pango_layout_new(gtk_widget_get_pango_context(GTK_WIDGET(self)));
+	pango_layout_set_font_description(layout, priv->font_description);
+	gchar* text = g_strdup_printf("%zu", number);
+	pango_layout_set_text(layout, text, -1);
+	g_free(text);
+	return layout;
+}
+
 static double index_to_x(PangoLayoutLine* layout_line, std::size_t index) {
 	int x_pos;
 	pango_layout_line_index_to_x(layout_line, index, false, &x_pos);
@@ -214,17 +235,34 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 		for (const Range& selection: lines[row - start_row].selections) {
 			const double x = index_to_x(layout_line, selection.start);
 			const double width = index_to_x(layout_line, selection.end) - x;
-			cairo_rectangle(cr, x, y, width, priv->line_height);
+			cairo_rectangle(cr, priv->gutter_width + x, y, width, priv->line_height);
 			cairo_fill(cr);
 		}
 		// text
-		cairo_move_to(cr, 0.0, y + priv->ascent);
+		cairo_move_to(cr, priv->gutter_width, y + priv->ascent);
 		set_source(cr, theme.styles[0].color);
 		pango_cairo_show_layout_line(cr, layout_line);
+		// line number
+		{
+			PangoLayout* layout = create_layout(self, lines[row - start_row].number);
+			PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+			PangoRectangle extents;
+			pango_layout_line_get_pixel_extents(layout_line, NULL, &extents);
+			const double x = priv->gutter_width - std::round(priv->char_width) * 2.0 - extents.width;
+			cairo_move_to(cr, x, y + priv->ascent);
+			if (lines[row - start_row].cursors.size() > 0) {
+				set_source(cr, theme.number_active.color);
+			}
+			else {
+				set_source(cr, theme.number.color);
+			}
+			pango_cairo_show_layout_line(cr, layout_line);
+			g_object_unref(layout);
+		}
 		// cursors
 		set_source(cr, theme.cursor);
 		for (std::size_t cursor: lines[row - start_row].cursors) {
-			const double x = index_to_x(layout_line, cursor);
+			const double x = priv->gutter_width + index_to_x(layout_line, cursor);
 			cairo_rectangle(cr, x - 1.0, y, 2.0, priv->line_height);
 			cairo_fill(cr);
 		}
@@ -273,7 +311,7 @@ static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_pres
 	const std::size_t line = std::max((y + vadjustment) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
 		PangoLayout* layout = create_layout(self, priv->editor->get_theme(), priv->editor->render(line, line + 1)[0]);
-		const std::size_t column = x_to_index(layout, x);
+		const std::size_t column = x_to_index(layout, x - priv->gutter_width);
 		g_object_unref(layout);
 		if (extend_selection) {
 			priv->editor->extend_selection(column, line);
@@ -303,7 +341,7 @@ static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, g
 	const std::size_t line = std::max((start_y + offset_y + vadjustment) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
 		PangoLayout* layout = create_layout(self, priv->editor->get_theme(), priv->editor->render(line, line + 1)[0]);
-		const std::size_t column = x_to_index(layout, start_x + offset_x);
+		const std::size_t column = x_to_index(layout, start_x + offset_x - priv->gutter_width);
 		g_object_unref(layout);
 		priv->editor->extend_selection(column, line);
 		gtk_widget_queue_draw(GTK_WIDGET(self));
