@@ -405,6 +405,12 @@ static void platon_editor_widget_move_to_end_of_line(PlatonEditorWidget* self, g
 	gtk_widget_queue_draw(GTK_WIDGET(self));
 }
 
+static void platon_editor_widget_select_all(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->editor->select_all();
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
 static void platon_editor_widget_dispose(GObject* object) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(object);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
@@ -445,6 +451,7 @@ static void platon_editor_widget_class_init(PlatonEditorWidgetClass* klass) {
 	klass->move_down = platon_editor_widget_move_down;
 	klass->move_to_beginning_of_line = platon_editor_widget_move_to_beginning_of_line;
 	klass->move_to_end_of_line = platon_editor_widget_move_to_end_of_line;
+	klass->select_all = platon_editor_widget_select_all;
 	g_signal_new("insert-newline", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, insert_newline), NULL, NULL, NULL, G_TYPE_NONE, 0);
 	g_signal_new("delete-backward", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, delete_backward), NULL, NULL, NULL, G_TYPE_NONE, 0);
 	g_signal_new("delete-forward", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, delete_forward), NULL, NULL, NULL, G_TYPE_NONE, 0);
@@ -454,6 +461,7 @@ static void platon_editor_widget_class_init(PlatonEditorWidgetClass* klass) {
 	g_signal_new("move-down", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_down), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
 	g_signal_new("move-to-beginning-of-line", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_to_beginning_of_line), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
 	g_signal_new("move-to-end-of-line", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, move_to_end_of_line), NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
+	g_signal_new("select-all", G_OBJECT_CLASS_TYPE(klass), (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION), G_STRUCT_OFFSET(PlatonEditorWidgetClass, select_all), NULL, NULL, NULL, G_TYPE_NONE, 0);
 	GtkBindingSet* binding_set = gtk_binding_set_by_class(klass);
 	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Return, (GdkModifierType)0, "insert-newline", 0);
 	gtk_binding_entry_add_signal(binding_set, GDK_KEY_BackSpace, (GdkModifierType)0, "delete-backward", 0);
@@ -470,6 +478,7 @@ static void platon_editor_widget_class_init(PlatonEditorWidgetClass* klass) {
 	gtk_binding_entry_add_signal(binding_set, GDK_KEY_Home, GDK_SHIFT_MASK, "move-to-beginning-of-line", 1, G_TYPE_BOOLEAN, TRUE);
 	gtk_binding_entry_add_signal(binding_set, GDK_KEY_End, (GdkModifierType)0, "move-to-end-of-line", 1, G_TYPE_BOOLEAN, FALSE);
 	gtk_binding_entry_add_signal(binding_set, GDK_KEY_End, GDK_SHIFT_MASK, "move-to-end-of-line", 1, G_TYPE_BOOLEAN, TRUE);
+	gtk_binding_entry_add_signal(binding_set, GDK_KEY_A, GDK_CONTROL_MASK, "select-all", 0);
 }
 
 static void platon_editor_widget_init(PlatonEditorWidget* self) {
