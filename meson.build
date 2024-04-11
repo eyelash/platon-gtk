@@ -2,7 +2,6 @@ project('platon-gtk', ['c', 'cpp'], default_options: ['b_ndebug=if-release'])
 
 executable(
 	meson.project_name(),
-	'core/c_api.cpp',
 	'core/prism/prism.cpp',
 	'application.c',
 	'window.c',
