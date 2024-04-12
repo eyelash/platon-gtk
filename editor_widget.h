@@ -19,6 +19,9 @@ struct _PlatonEditorWidgetClass {
 	void (*move_to_beginning_of_line)(PlatonEditorWidget* self, gboolean extend_selection);
 	void (*move_to_end_of_line)(PlatonEditorWidget* self, gboolean extend_selection);
 	void (*select_all)(PlatonEditorWidget* self);
+	void (*copy)(PlatonEditorWidget* self);
+	void (*cut)(PlatonEditorWidget* self);
+	void (*paste)(PlatonEditorWidget* self);
 };
 
 PlatonEditorWidget* platon_editor_widget_new(GFile* file);
