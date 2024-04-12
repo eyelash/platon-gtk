@@ -216,6 +216,7 @@ static std::size_t x_to_index(PangoLayout* layout, double x) {
 static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	const double allocated_width = gtk_widget_get_allocated_width(widget);
 	const double allocated_height = gtk_widget_get_allocated_height(widget);
 	const double vadjustment = gtk_adjustment_get_value(priv->vadjustment);
 	const double max_row = priv->editor->get_total_lines();
@@ -226,8 +227,20 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	// background
 	set_source(cr, theme.background);
 	cairo_paint(cr);
+	set_source(cr, theme.number_background);
+	cairo_rectangle(cr, 0.0, 0.0, priv->gutter_width, allocated_height);
+	cairo_fill(cr);
 	for (size_t row = start_row; row < end_row; ++row) {
 		const double y = row * priv->line_height - vadjustment;
+		const bool is_active = lines[row - start_row].cursors.size() > 0 || lines[row - start_row].selections.size() > 0;
+		if (is_active) {
+			set_source(cr, theme.background_active);
+			cairo_rectangle(cr, 0.0, y, allocated_width, priv->line_height);
+			cairo_fill(cr);
+			set_source(cr, theme.number_background_active);
+			cairo_rectangle(cr, 0.0, y, priv->gutter_width, priv->line_height);
+			cairo_fill(cr);
+		}
 		PangoLayout* layout = create_layout(self, theme, lines[row - start_row]);
 		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
 		// selections
@@ -250,12 +263,7 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 			pango_layout_line_get_pixel_extents(layout_line, NULL, &extents);
 			const double x = priv->gutter_width - std::round(priv->char_width) * 2.0 - extents.width;
 			cairo_move_to(cr, x, y + priv->ascent);
-			if (lines[row - start_row].cursors.size() > 0) {
-				set_source(cr, theme.number_active.color);
-			}
-			else {
-				set_source(cr, theme.number.color);
-			}
+			set_source(cr, is_active ? theme.number_active.color : theme.number.color);
 			pango_cairo_show_layout_line(cr, layout_line);
 			g_object_unref(layout);
 		}
