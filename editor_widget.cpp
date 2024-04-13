@@ -8,6 +8,94 @@
 
 #define LINE_HEIGHT_FACTOR 1.5
 
+static void set_source(cairo_t* cr, const Color& color) {
+	cairo_set_source_rgba(cr, color.r, color.g, color.b, color.a);
+}
+
+class Layout {
+	int style;
+	PangoLayout* layout;
+public:
+	Layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, const std::string& text, int style, const std::vector<Span>& spans): style(style) {
+		layout = pango_layout_new(context);
+		pango_layout_set_font_description(layout, font_description);
+		pango_layout_set_text(layout, text.c_str(), -1);
+		if (spans.empty()) {
+			return;
+		}
+		PangoAttrList* attrs = pango_attr_list_new();
+		for (const Span& span: spans) {
+			const Style& style = theme.styles[span.style];
+			PangoAttribute* attr = pango_attr_foreground_new(style.color.r * G_MAXUINT16, style.color.g * G_MAXUINT16, style.color.b * G_MAXUINT16);
+			attr->start_index = span.start;
+			attr->end_index = span.end;
+			pango_attr_list_insert(attrs, attr);
+			attr = pango_attr_foreground_alpha_new(style.color.a * G_MAXUINT16);
+			attr->start_index = span.start;
+			attr->end_index = span.end;
+			pango_attr_list_insert(attrs, attr);
+			if (style.bold) {
+				attr = pango_attr_weight_new(PANGO_WEIGHT_BOLD);
+				attr->start_index = span.start;
+				attr->end_index = span.end;
+				pango_attr_list_insert(attrs, attr);
+			}
+			if (style.italic) {
+				attr = pango_attr_style_new(PANGO_STYLE_ITALIC);
+				attr->start_index = span.start;
+				attr->end_index = span.end;
+				pango_attr_list_insert(attrs, attr);
+			}
+		}
+		pango_layout_set_attributes(layout, attrs);
+		pango_attr_list_unref(attrs);
+	}
+	Layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, const RenderedLine& line): Layout(context, font_description, theme, line.text, Style::DEFAULT, line.spans) {}
+	Layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, std::size_t line_number, bool active): Layout(context, font_description, theme, std::to_string(line_number), active ? Style::LINE_NUMBER_ACTIVE : Style::LINE_NUMBER, std::vector<Span>()) {}
+	Layout(const Layout& layout): style(layout.style), layout(layout.layout) {
+		g_object_ref(this->layout);
+	}
+	~Layout() {
+		g_object_unref(layout);
+	}
+	Layout& operator =(const Layout& layout) {
+		this->style = layout.style;
+		g_set_object(&this->layout, layout.layout);
+		return *this;
+	}
+	PangoLayoutLine* get_layout_line() const {
+		return pango_layout_get_line_readonly(layout, 0);
+	}
+	void draw(cairo_t* cr, const Theme& theme, double x, double y, bool align_right = false) const {
+		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+		if (align_right) {
+			PangoRectangle extents;
+			pango_layout_line_get_pixel_extents(layout_line, NULL, &extents);
+			x -= extents.width;
+		}
+		cairo_move_to(cr, x, y);
+		set_source(cr, theme.styles[style].color);
+		pango_cairo_show_layout_line(cr, layout_line);
+	}
+	double index_to_x(std::size_t index) const {
+		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+		int x_pos;
+		pango_layout_line_index_to_x(layout_line, index, false, &x_pos);
+		return pango_units_to_double(x_pos);
+	}
+	std::size_t x_to_index(double x) const {
+		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+		int index, trailing;
+		pango_layout_line_x_to_index(layout_line, pango_units_from_double(x), &index, &trailing);
+		const char* text = pango_layout_get_text(layout);
+		const char* pointer = text + index;
+		for (; trailing > 0; trailing--) {
+			pointer = g_utf8_next_char(pointer);
+		}
+		return pointer - text;
+	}
+};
+
 typedef struct {
 	GtkAdjustment *hadjustment;
 	GtkAdjustment *vadjustment;
@@ -143,79 +231,10 @@ static void platon_editor_widget_size_allocate(GtkWidget* widget, GtkAllocation*
 	update(self);
 }
 
-static void set_source(cairo_t* cr, const Color& color) {
-	cairo_set_source_rgba(cr, color.r, color.g, color.b, color.a);
-}
-
-static PangoLayout* create_layout(PlatonEditorWidget* self, const Theme& theme, const RenderedLine& line) {
-	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
-	PangoLayout* layout = pango_layout_new(gtk_widget_get_pango_context(GTK_WIDGET(self)));
-	pango_layout_set_font_description(layout, priv->font_description);
-	pango_layout_set_text(layout, line.text.c_str(), -1);
-	PangoAttrList* attrs = pango_attr_list_new();
-	for (const Span& span: line.spans) {
-		const Style& style = theme.styles[span.style];
-		PangoAttribute* attr = pango_attr_foreground_new(style.color.r * G_MAXUINT16, style.color.g * G_MAXUINT16, style.color.b * G_MAXUINT16);
-		attr->start_index = span.start;
-		attr->end_index = span.end;
-		pango_attr_list_insert(attrs, attr);
-		attr = pango_attr_foreground_alpha_new(style.color.a * G_MAXUINT16);
-		attr->start_index = span.start;
-		attr->end_index = span.end;
-		pango_attr_list_insert(attrs, attr);
-		if (style.bold) {
-			attr = pango_attr_weight_new(PANGO_WEIGHT_BOLD);
-			attr->start_index = span.start;
-			attr->end_index = span.end;
-			pango_attr_list_insert(attrs, attr);
-		}
-		if (style.italic) {
-			attr = pango_attr_style_new(PANGO_STYLE_ITALIC);
-			attr->start_index = span.start;
-			attr->end_index = span.end;
-			pango_attr_list_insert(attrs, attr);
-		}
-	}
-	pango_layout_set_attributes(layout, attrs);
-	pango_attr_list_unref(attrs);
-	return layout;
-}
-
-static PangoLayout* create_layout(PlatonEditorWidget* self, std::size_t number) {
-	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
-	PangoLayout* layout = pango_layout_new(gtk_widget_get_pango_context(GTK_WIDGET(self)));
-	pango_layout_set_font_description(layout, priv->font_description);
-	gchar* text = g_strdup_printf("%zu", number);
-	pango_layout_set_text(layout, text, -1);
-	g_free(text);
-	return layout;
-}
-
-static double index_to_x(PangoLayoutLine* layout_line, std::size_t index) {
-	int x_pos;
-	pango_layout_line_index_to_x(layout_line, index, false, &x_pos);
-	return pango_units_to_double(x_pos);
-}
-
-static std::size_t x_to_index(const char* text, PangoLayoutLine* layout_line, double x) {
-	int index, trailing;
-	pango_layout_line_x_to_index(layout_line, pango_units_from_double(x), &index, &trailing);
-	const char* pointer = text + index;
-	for (; trailing > 0; trailing--) {
-		pointer = g_utf8_next_char(pointer);
-	}
-	return pointer - text;
-}
-
-static std::size_t x_to_index(PangoLayout* layout, double x) {
-	const char* text = pango_layout_get_text(layout);
-	PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
-	return x_to_index(text, layout_line, x);
-}
-
 static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	PangoContext* pango_context = gtk_widget_get_pango_context(GTK_WIDGET(self));
 	const double allocated_width = gtk_widget_get_allocated_width(widget);
 	const double allocated_height = gtk_widget_get_allocated_height(widget);
 	const double vadjustment = gtk_adjustment_get_value(priv->vadjustment);
@@ -241,40 +260,30 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 			cairo_rectangle(cr, 0.0, y, priv->gutter_width, priv->line_height);
 			cairo_fill(cr);
 		}
-		PangoLayout* layout = create_layout(self, theme, lines[row - start_row]);
-		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
+		Layout layout(pango_context, priv->font_description, theme, lines[row - start_row]);
 		// selections
 		set_source(cr, theme.selection);
 		for (const Range& selection: lines[row - start_row].selections) {
-			const double x = index_to_x(layout_line, selection.start);
-			const double width = index_to_x(layout_line, selection.end) - x;
+			const double x = layout.index_to_x(selection.start);
+			const double width = layout.index_to_x(selection.end) - x;
 			cairo_rectangle(cr, priv->gutter_width + x, y, width, priv->line_height);
 			cairo_fill(cr);
 		}
 		// text
-		cairo_move_to(cr, priv->gutter_width, y + priv->ascent);
-		set_source(cr, theme.styles[Style::DEFAULT].color);
-		pango_cairo_show_layout_line(cr, layout_line);
+		layout.draw(cr, theme, priv->gutter_width, y + priv->ascent);
 		// line number
 		{
-			PangoLayout* layout = create_layout(self, lines[row - start_row].number);
-			PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
-			PangoRectangle extents;
-			pango_layout_line_get_pixel_extents(layout_line, NULL, &extents);
-			const double x = priv->gutter_width - std::round(priv->char_width) * 2.0 - extents.width;
-			cairo_move_to(cr, x, y + priv->ascent);
-			set_source(cr, theme.styles[is_active ? Style::LINE_NUMBER_ACTIVE : Style::LINE_NUMBER].color);
-			pango_cairo_show_layout_line(cr, layout_line);
-			g_object_unref(layout);
+			Layout layout(pango_context, priv->font_description, theme, lines[row - start_row].number, is_active);
+			const double x = priv->gutter_width - std::round(priv->char_width) * 2.0;
+			layout.draw(cr, theme, x, y + priv->ascent, true);
 		}
 		// cursors
 		set_source(cr, theme.cursor);
 		for (std::size_t cursor: lines[row - start_row].cursors) {
-			const double x = priv->gutter_width + index_to_x(layout_line, cursor);
+			const double x = priv->gutter_width + layout.index_to_x(cursor);
 			cairo_rectangle(cr, x - 1.0, y, 2.0, priv->line_height);
 			cairo_fill(cr);
 		}
-		g_object_unref(layout);
 	}
 	return GDK_EVENT_STOP;
 }
@@ -318,9 +327,8 @@ static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_pres
 	const bool extend_selection = state & gtk_widget_get_modifier_mask(GTK_WIDGET(self), GDK_MODIFIER_INTENT_EXTEND_SELECTION);
 	const std::size_t line = std::max((y + vadjustment) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
-		PangoLayout* layout = create_layout(self, priv->editor->get_theme(), priv->editor->render(line));
-		const std::size_t column = x_to_index(layout, x - priv->gutter_width);
-		g_object_unref(layout);
+		Layout layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
+		const std::size_t column = layout.x_to_index(x - priv->gutter_width);
 		if (extend_selection) {
 			priv->editor->extend_selection(column, line);
 		}
@@ -348,9 +356,8 @@ static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, g
 	gtk_gesture_drag_get_start_point(drag_gesture, &start_x, &start_y);
 	const std::size_t line = std::max((start_y + offset_y + vadjustment) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
-		PangoLayout* layout = create_layout(self, priv->editor->get_theme(), priv->editor->render(line));
-		const std::size_t column = x_to_index(layout, start_x + offset_x - priv->gutter_width);
-		g_object_unref(layout);
+		Layout layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
+		const std::size_t column = layout.x_to_index(start_x + offset_x - priv->gutter_width);
 		priv->editor->extend_selection(column, line);
 		gtk_widget_queue_draw(GTK_WIDGET(self));
 	}
