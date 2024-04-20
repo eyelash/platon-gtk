@@ -1,6 +1,7 @@
 #include "editor_widget.h"
 #include "core/editor.hpp"
 #include <cmath>
+#include <map>
 
 #if !GLIB_CHECK_VERSION(2, 73, 2)
 #define G_CONNECT_DEFAULT ((GConnectFlags)0)
@@ -50,8 +51,6 @@ public:
 		pango_layout_set_attributes(layout, attrs);
 		pango_attr_list_unref(attrs);
 	}
-	Layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, const RenderedLine& line): Layout(context, font_description, theme, line.text, Style::DEFAULT, line.spans) {}
-	Layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, std::size_t line_number, bool active): Layout(context, font_description, theme, std::to_string(line_number), active ? Style::LINE_NUMBER_ACTIVE : Style::LINE_NUMBER, std::vector<Span>()) {}
 	Layout(const Layout& layout): style(layout.style), layout(layout.layout) {
 		g_object_ref(this->layout);
 	}
@@ -96,6 +95,54 @@ public:
 	}
 };
 
+class LayoutCache {
+	struct Key {
+		std::string text;
+		int style;
+		std::vector<Span> spans;
+		Key(const std::string& text, int style, const std::vector<Span>& spans): text(text), style(style), spans(spans) {}
+		bool operator <(const Key& key) const {
+			return std::tie(text, style, spans) < std::tie(key.text, key.style, key.spans);
+		}
+	};
+	std::map<Key, std::pair<Layout, std::size_t>> cache;
+	std::size_t generation;
+public:
+	LayoutCache(): generation(0) {}
+	Layout get_layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, const std::string& text, int style, const std::vector<Span>& spans) {
+		Key key(text, style, spans);
+		auto iter = cache.find(key);
+		if (iter != cache.end()) {
+			iter->second.second = generation;
+			return iter->second.first;
+		}
+		else {
+			Layout layout(context, font_description, theme, text, style, spans);
+			cache.insert({key, {layout, generation}});
+			return layout;
+		}
+	}
+	Layout get_layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, const RenderedLine& line) {
+		return get_layout(context, font_description, theme, line.text, Style::DEFAULT, line.spans);
+	}
+	Layout get_layout(PangoContext* context, PangoFontDescription* font_description, const Theme& theme, std::size_t line_number, bool active) {
+		return get_layout(context, font_description, theme, std::to_string(line_number), active ? Style::LINE_NUMBER_ACTIVE : Style::LINE_NUMBER, std::vector<Span>());
+	}
+	void increment_generation() {
+		++generation;
+	}
+	void collect_garbage() {
+		for (auto iter = cache.begin(); iter != cache.end();) {
+			if (iter->second.second < generation) {
+				iter = cache.erase(iter);
+			}
+			else {
+				++iter;
+			}
+		}
+	}
+};
+
 typedef struct {
 	GtkAdjustment *hadjustment;
 	GtkAdjustment *vadjustment;
@@ -109,6 +156,7 @@ typedef struct {
 	GtkIMContext* im_context;
 	GtkGesture* multipress_gesture;
 	GtkGesture* drag_gesture;
+	LayoutCache* layout_cache;
 	double gutter_width;
 } PlatonEditorWidgetPrivate;
 
@@ -234,6 +282,7 @@ static void platon_editor_widget_size_allocate(GtkWidget* widget, GtkAllocation*
 static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->layout_cache->increment_generation();
 	PangoContext* pango_context = gtk_widget_get_pango_context(GTK_WIDGET(self));
 	const double allocated_width = gtk_widget_get_allocated_width(widget);
 	const double allocated_height = gtk_widget_get_allocated_height(widget);
@@ -260,7 +309,7 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 			cairo_rectangle(cr, 0.0, y, priv->gutter_width, priv->line_height);
 			cairo_fill(cr);
 		}
-		Layout layout(pango_context, priv->font_description, theme, lines[row - start_row]);
+		Layout layout = priv->layout_cache->get_layout(pango_context, priv->font_description, theme, lines[row - start_row]);
 		// selections
 		set_source(cr, theme.selection);
 		for (const Range& selection: lines[row - start_row].selections) {
@@ -273,7 +322,7 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 		layout.draw(cr, theme, priv->gutter_width, y + priv->ascent);
 		// line number
 		{
-			Layout layout(pango_context, priv->font_description, theme, lines[row - start_row].number, is_active);
+			Layout layout = priv->layout_cache->get_layout(pango_context, priv->font_description, theme, lines[row - start_row].number, is_active);
 			const double x = priv->gutter_width - std::round(priv->char_width) * 2.0;
 			layout.draw(cr, theme, x, y + priv->ascent, true);
 		}
@@ -285,6 +334,7 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 			cairo_fill(cr);
 		}
 	}
+	priv->layout_cache->collect_garbage();
 	return GDK_EVENT_STOP;
 }
 
@@ -327,7 +377,7 @@ static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_pres
 	const bool extend_selection = state & gtk_widget_get_modifier_mask(GTK_WIDGET(self), GDK_MODIFIER_INTENT_EXTEND_SELECTION);
 	const std::size_t line = std::max((y + vadjustment) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
-		Layout layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
+		Layout layout = priv->layout_cache->get_layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
 		const std::size_t column = layout.x_to_index(x - priv->gutter_width);
 		if (extend_selection) {
 			priv->editor->extend_selection(column, line);
@@ -356,7 +406,7 @@ static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, g
 	gtk_gesture_drag_get_start_point(drag_gesture, &start_x, &start_y);
 	const std::size_t line = std::max((start_y + offset_y + vadjustment) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
-		Layout layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
+		Layout layout = priv->layout_cache->get_layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
 		const std::size_t column = layout.x_to_index(start_x + offset_x - priv->gutter_width);
 		priv->editor->extend_selection(column, line);
 		gtk_widget_queue_draw(GTK_WIDGET(self));
@@ -465,6 +515,8 @@ static void platon_editor_widget_dispose(GObject* object) {
 static void platon_editor_widget_finalize(GObject* object) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(object);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	pango_font_description_free(priv->font_description);
+	delete priv->layout_cache;
 	delete priv->editor;
 	G_OBJECT_CLASS(platon_editor_widget_parent_class)->finalize(object);
 }
@@ -557,6 +609,7 @@ static void platon_editor_widget_init(PlatonEditorWidget* self) {
 	g_signal_connect_object(priv->multipress_gesture, "released", G_CALLBACK(handle_released), self, G_CONNECT_DEFAULT);
 	priv->drag_gesture = gtk_gesture_drag_new(GTK_WIDGET(self));
 	g_signal_connect_object(priv->drag_gesture, "drag_update", G_CALLBACK(handle_drag_update), self, G_CONNECT_DEFAULT);
+	priv->layout_cache = new LayoutCache();
 	gtk_widget_set_can_focus(GTK_WIDGET(self), TRUE);
 	gtk_widget_add_events(GTK_WIDGET(self), GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
 }
