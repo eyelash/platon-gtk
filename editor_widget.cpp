@@ -479,7 +479,7 @@ static void platon_editor_widget_select_all(PlatonEditorWidget* self) {
 static void platon_editor_widget_copy(PlatonEditorWidget* self) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	GtkClipboard* clipboard = gtk_widget_get_clipboard(GTK_WIDGET(self), GDK_SELECTION_CLIPBOARD);
-	gtk_clipboard_set_text(clipboard, priv->editor->copy(), -1);
+	gtk_clipboard_set_text(clipboard, priv->editor->copy().c_str(), -1);
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
 }
@@ -487,7 +487,7 @@ static void platon_editor_widget_copy(PlatonEditorWidget* self) {
 static void platon_editor_widget_cut(PlatonEditorWidget* self) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	GtkClipboard* clipboard = gtk_widget_get_clipboard(GTK_WIDGET(self), GDK_SELECTION_CLIPBOARD);
-	gtk_clipboard_set_text(clipboard, priv->editor->cut(), -1);
+	gtk_clipboard_set_text(clipboard, priv->editor->cut().c_str(), -1);
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
 }
