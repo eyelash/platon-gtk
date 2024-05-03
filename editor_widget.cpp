@@ -62,9 +62,6 @@ public:
 		g_set_object(&this->layout, layout.layout);
 		return *this;
 	}
-	PangoLayoutLine* get_layout_line() const {
-		return pango_layout_get_line_readonly(layout, 0);
-	}
 	void draw(cairo_t* cr, const Theme& theme, double x, double y, bool align_right = false) const {
 		PangoLayoutLine* layout_line = pango_layout_get_line_readonly(layout, 0);
 		if (align_right) {
@@ -88,7 +85,7 @@ public:
 		pango_layout_line_x_to_index(layout_line, pango_units_from_double(x), &index, &trailing);
 		const char* text = pango_layout_get_text(layout);
 		const char* pointer = text + index;
-		for (; trailing > 0; trailing--) {
+		for (; trailing > 0; --trailing) {
 			pointer = g_utf8_next_char(pointer);
 		}
 		return pointer - text;
@@ -144,8 +141,8 @@ public:
 };
 
 typedef struct {
-	GtkAdjustment *hadjustment;
-	GtkAdjustment *vadjustment;
+	GtkAdjustment* hadjustment;
+	GtkAdjustment* vadjustment;
 	GtkScrollablePolicy hscroll_policy;
 	GtkScrollablePolicy vscroll_policy;
 	Editor* editor;
@@ -394,10 +391,6 @@ static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_pres
 	}
 }
 
-static void handle_released(GtkGestureMultiPress* multipress_gesture, gint n_press, gdouble x, gdouble y, gpointer user_data) {
-
-}
-
 static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, gdouble offset_y, gpointer user_data) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(user_data);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
@@ -503,18 +496,12 @@ static void platon_editor_widget_paste(PlatonEditorWidget* self) {
 	}, self);
 }
 
-static void platon_editor_widget_dispose(GObject* object) {
-	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(object);
-	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
-	g_clear_object(&priv->drag_gesture);
-	g_clear_object(&priv->multipress_gesture);
-	g_clear_object(&priv->im_context);
-	G_OBJECT_CLASS(platon_editor_widget_parent_class)->dispose(object);
-}
-
 static void platon_editor_widget_finalize(GObject* object) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(object);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	g_object_unref(priv->drag_gesture);
+	g_object_unref(priv->multipress_gesture);
+	g_object_unref(priv->im_context);
 	pango_font_description_free(priv->font_description);
 	delete priv->layout_cache;
 	delete priv->editor;
@@ -522,7 +509,6 @@ static void platon_editor_widget_finalize(GObject* object) {
 }
 
 static void platon_editor_widget_class_init(PlatonEditorWidgetClass* klass) {
-	G_OBJECT_CLASS(klass)->dispose = platon_editor_widget_dispose;
 	G_OBJECT_CLASS(klass)->finalize = platon_editor_widget_finalize;
 	G_OBJECT_CLASS(klass)->get_property = platon_editor_widget_get_property;
 	G_OBJECT_CLASS(klass)->set_property = platon_editor_widget_set_property;
@@ -606,9 +592,8 @@ static void platon_editor_widget_init(PlatonEditorWidget* self) {
 	g_signal_connect_object(priv->im_context, "commit", G_CALLBACK(handle_commit), self, G_CONNECT_DEFAULT);
 	priv->multipress_gesture = gtk_gesture_multi_press_new(GTK_WIDGET(self));
 	g_signal_connect_object(priv->multipress_gesture, "pressed", G_CALLBACK(handle_pressed), self, G_CONNECT_DEFAULT);
-	g_signal_connect_object(priv->multipress_gesture, "released", G_CALLBACK(handle_released), self, G_CONNECT_DEFAULT);
 	priv->drag_gesture = gtk_gesture_drag_new(GTK_WIDGET(self));
-	g_signal_connect_object(priv->drag_gesture, "drag_update", G_CALLBACK(handle_drag_update), self, G_CONNECT_DEFAULT);
+	g_signal_connect_object(priv->drag_gesture, "drag-update", G_CALLBACK(handle_drag_update), self, G_CONNECT_DEFAULT);
 	priv->layout_cache = new LayoutCache();
 	gtk_widget_set_can_focus(GTK_WIDGET(self), TRUE);
 	gtk_widget_add_events(GTK_WIDGET(self), GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
