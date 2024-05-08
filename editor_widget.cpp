@@ -145,6 +145,7 @@ typedef struct {
 	GtkAdjustment* vadjustment;
 	GtkScrollablePolicy hscroll_policy;
 	GtkScrollablePolicy vscroll_policy;
+	GFile* file;
 	Editor* editor;
 	PangoFontDescription* font_description;
 	double ascent;
@@ -503,6 +504,7 @@ static void platon_editor_widget_finalize(GObject* object) {
 	g_object_unref(priv->multipress_gesture);
 	g_object_unref(priv->im_context);
 	pango_font_description_free(priv->font_description);
+	if (priv->file) g_object_unref(priv->file);
 	delete priv->layout_cache;
 	delete priv->editor;
 	G_OBJECT_CLASS(platon_editor_widget_parent_class)->finalize(object);
@@ -603,6 +605,8 @@ PlatonEditorWidget* platon_editor_widget_new(GFile* file) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(g_object_new(PLATON_TYPE_EDITOR_WIDGET, NULL));
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	if (file) {
+		priv->file = file;
+		g_object_ref(priv->file);
 		gchar* path = g_file_get_path(file);
 		priv->editor = new Editor(path);
 		g_free(path);
@@ -611,4 +615,27 @@ PlatonEditorWidget* platon_editor_widget_new(GFile* file) {
 		priv->editor = new Editor();
 	}
 	return self;
+}
+
+gboolean platon_editor_widget_save(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	if (!priv->file) {
+		return FALSE;
+	}
+	gchar* path = g_file_get_path(priv->file);
+	priv->editor->save(path);
+	g_free(path);
+	return TRUE;
+}
+
+void platon_editor_widget_save_as(PlatonEditorWidget* self, GFile* file) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	if (file != priv->file) {
+		if (priv->file) g_object_unref(priv->file);
+		priv->file = file;
+		g_object_ref(priv->file);
+	}
+	gchar* path = g_file_get_path(priv->file);
+	priv->editor->save(path);
+	g_free(path);
 }

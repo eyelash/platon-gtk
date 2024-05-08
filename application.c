@@ -7,6 +7,12 @@ struct _PlatonApplication {
 
 G_DEFINE_TYPE(PlatonApplication, platon_application, GTK_TYPE_APPLICATION)
 
+static void platon_application_startup(GApplication* application) {
+	PlatonApplication* self = PLATON_APPLICATION(application);
+	G_APPLICATION_CLASS(platon_application_parent_class)->startup(application);
+	gtk_application_set_accels_for_action(GTK_APPLICATION(application), "win.save", (const gchar*[]){"<Primary>S", NULL});
+}
+
 static void platon_application_activate(GApplication* application) {
 	PlatonApplication* self = PLATON_APPLICATION(application);
 	PlatonWindow* window = platon_window_new(GTK_APPLICATION(self));
@@ -24,6 +30,7 @@ static void platon_application_open(GApplication* application, GFile** files, gi
 }
 
 static void platon_application_class_init(PlatonApplicationClass* klass) {
+	G_APPLICATION_CLASS(klass)->startup = platon_application_startup;
 	G_APPLICATION_CLASS(klass)->activate = platon_application_activate;
 	G_APPLICATION_CLASS(klass)->open = platon_application_open;
 }

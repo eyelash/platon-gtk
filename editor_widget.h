@@ -26,4 +26,7 @@ struct _PlatonEditorWidgetClass {
 
 PlatonEditorWidget* platon_editor_widget_new(GFile* file);
 
+gboolean platon_editor_widget_save(PlatonEditorWidget* self);
+void platon_editor_widget_save_as(PlatonEditorWidget* self, GFile* file);
+
 G_END_DECLS
