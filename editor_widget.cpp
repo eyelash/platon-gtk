@@ -7,7 +7,9 @@
 #define G_CONNECT_DEFAULT ((GConnectFlags)0)
 #endif
 
-#define LINE_HEIGHT_FACTOR 1.5
+#define LINE_HEIGHT 1.5
+#define HORIZONTAL_PADDING 2.0
+#define VERTICAL_PADDING 1.0
 
 static void set_source(cairo_t* cr, const Color& color) {
 	cairo_set_source_rgba(cr, color.r, color.g, color.b, color.a);
@@ -148,6 +150,8 @@ typedef struct {
 	GFile* file;
 	Editor* editor;
 	PangoFontDescription* font_description;
+	double font_size;
+	double vertical_padding;
 	double ascent;
 	double line_height;
 	double char_width;
@@ -184,9 +188,9 @@ static std::size_t count_digits(std::size_t n) {
 static void update(PlatonEditorWidget* self) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	if (priv->vadjustment) {
-		priv->gutter_width = std::round(priv->char_width) * (4.0 + count_digits(priv->editor->get_total_lines()));
+		priv->gutter_width = std::round(priv->char_width * count_digits(priv->editor->get_total_lines()) + priv->font_size * (HORIZONTAL_PADDING * 2.0));
 		const double page_size = gtk_widget_get_allocated_height(GTK_WIDGET(self));
-		const double upper = std::max(priv->editor->get_total_lines() * priv->line_height, page_size);
+		const double upper = std::max(priv->editor->get_total_lines() * priv->line_height + priv->vertical_padding * 2.0, page_size);
 		const double max_value = std::max(upper - page_size, 0.0);
 		g_object_freeze_notify(G_OBJECT(priv->vadjustment));
 		gtk_adjustment_set_page_size(priv->vadjustment, page_size);
@@ -297,7 +301,7 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	cairo_rectangle(cr, 0.0, 0.0, priv->gutter_width, allocated_height);
 	cairo_fill(cr);
 	for (size_t row = start_row; row < end_row; ++row) {
-		const double y = row * priv->line_height - vadjustment;
+		const double y = priv->vertical_padding + row * priv->line_height - vadjustment;
 		const bool is_active = lines[row - start_row].cursors.size() > 0 || lines[row - start_row].selections.size() > 0;
 		if (is_active) {
 			set_source(cr, theme.background_active);
@@ -321,7 +325,7 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 		// line number
 		{
 			Layout layout = priv->layout_cache->get_layout(pango_context, priv->font_description, theme, lines[row - start_row].number, is_active);
-			const double x = priv->gutter_width - std::round(priv->char_width) * 2.0;
+			const double x = priv->gutter_width - std::round(priv->font_size * HORIZONTAL_PADDING);
 			layout.draw(cr, theme, x, y + priv->ascent, true);
 		}
 		// cursors
@@ -373,7 +377,7 @@ static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_pres
 	gdk_event_get_state(event, &state);
 	const bool modify_selection = state & gtk_widget_get_modifier_mask(GTK_WIDGET(self), GDK_MODIFIER_INTENT_MODIFY_SELECTION);
 	const bool extend_selection = state & gtk_widget_get_modifier_mask(GTK_WIDGET(self), GDK_MODIFIER_INTENT_EXTEND_SELECTION);
-	const std::size_t line = std::max((y + vadjustment) / priv->line_height, 0.0);
+	const std::size_t line = std::max((y + vadjustment - priv->vertical_padding) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
 		Layout layout = priv->layout_cache->get_layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
 		const std::size_t column = layout.x_to_index(x - priv->gutter_width);
@@ -398,10 +402,12 @@ static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, g
 	const double vadjustment = gtk_adjustment_get_value(priv->vadjustment);
 	double start_x, start_y;
 	gtk_gesture_drag_get_start_point(drag_gesture, &start_x, &start_y);
-	const std::size_t line = std::max((start_y + offset_y + vadjustment) / priv->line_height, 0.0);
+	const gdouble x = start_x + offset_x;
+	const gdouble y = start_y + offset_y;
+	const std::size_t line = std::max((y + vadjustment - priv->vertical_padding) / priv->line_height, 0.0);
 	if (line < priv->editor->get_total_lines()) {
 		Layout layout = priv->layout_cache->get_layout(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, priv->editor->get_theme(), priv->editor->render(line));
-		const std::size_t column = layout.x_to_index(start_x + offset_x - priv->gutter_width);
+		const std::size_t column = layout.x_to_index(x - priv->gutter_width);
 		priv->editor->extend_selection(column, line);
 		gtk_widget_queue_draw(GTK_WIDGET(self));
 	}
@@ -580,13 +586,14 @@ static void platon_editor_widget_init(PlatonEditorWidget* self) {
 	priv->font_description = pango_font_description_from_string(monospace_font_name);
 	g_free(monospace_font_name);
 	PangoFontMetrics* metrics = pango_context_get_metrics(gtk_widget_get_pango_context(GTK_WIDGET(self)), priv->font_description, NULL);
-	double font_size = pango_units_to_double(pango_font_description_get_size(priv->font_description));
+	priv->font_size = pango_units_to_double(pango_font_description_get_size(priv->font_description));
 	if (!pango_font_description_get_size_is_absolute(priv->font_description)) {
-		font_size = font_size / 72.0 * 96.0;
+		priv->font_size = priv->font_size / 72.0 * 96.0;
 	}
+	priv->vertical_padding = std::round(priv->font_size * VERTICAL_PADDING);
 	const double ascent = pango_units_to_double(pango_font_metrics_get_ascent(metrics));
 	const double descent = pango_units_to_double(pango_font_metrics_get_descent(metrics));
-	priv->line_height = std::round(font_size * LINE_HEIGHT_FACTOR);
+	priv->line_height = std::round(priv->font_size * LINE_HEIGHT);
 	priv->ascent = std::round(ascent + (priv->line_height - (ascent + descent)) / 2.0);
 	priv->char_width = pango_units_to_double(pango_font_metrics_get_approximate_char_width(metrics));
 	pango_font_metrics_unref(metrics);
