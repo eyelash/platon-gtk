@@ -147,6 +147,7 @@ typedef struct {
 	GtkAdjustment* vadjustment;
 	GtkScrollablePolicy hscroll_policy;
 	GtkScrollablePolicy vscroll_policy;
+	GdkWindow* text_window;
 	GFile* file;
 	Editor* editor;
 	PangoFontDescription* font_description;
@@ -188,7 +189,13 @@ static std::size_t count_digits(std::size_t n) {
 static void update(PlatonEditorWidget* self) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	if (priv->vadjustment) {
-		priv->gutter_width = std::round(priv->char_width * count_digits(priv->editor->get_total_lines()) + priv->font_size * (HORIZONTAL_PADDING * 2.0));
+		const double gutter_width = std::round(priv->char_width * count_digits(priv->editor->get_total_lines()) + priv->font_size * (HORIZONTAL_PADDING * 2.0));
+		if (gutter_width != priv->gutter_width) {
+			priv->gutter_width = gutter_width;
+			GtkAllocation allocation;
+			gtk_widget_get_allocation(GTK_WIDGET(self), &allocation);
+			gdk_window_move_resize(priv->text_window, allocation.x + gutter_width, allocation.y, allocation.width - gutter_width, allocation.height);
+		}
 		const double page_size = gtk_widget_get_allocated_height(GTK_WIDGET(self));
 		const double upper = std::max(priv->editor->get_total_lines() * priv->line_height + priv->vertical_padding * 2.0, page_size);
 		const double max_value = std::max(upper - page_size, 0.0);
@@ -248,6 +255,8 @@ static void platon_editor_widget_set_property(GObject* object, guint property_id
 }
 
 static void platon_editor_widget_realize(GtkWidget* widget) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	gtk_widget_set_realized(widget, TRUE);
 	GtkAllocation allocation;
 	gtk_widget_get_allocation(widget, &allocation);
@@ -263,9 +272,22 @@ static void platon_editor_widget_realize(GtkWidget* widget) {
 	GdkWindow* window = gdk_window_new(gtk_widget_get_parent_window(widget), &attributes, GDK_WA_X | GDK_WA_Y | GDK_WA_VISUAL);
 	gtk_widget_register_window(widget, window);
 	gtk_widget_set_window(widget, window);
+	attributes.x = priv->gutter_width;
+	attributes.width = allocation.width - priv->gutter_width;
+	priv->text_window = gdk_window_new(window, &attributes, GDK_WA_X | GDK_WA_Y | GDK_WA_VISUAL);
+	gtk_widget_register_window(widget, priv->text_window);
+	gdk_window_show(priv->text_window);
+	GdkCursor* cursor = gdk_cursor_new_from_name(gdk_window_get_display(priv->text_window), "text");
+	gdk_window_set_cursor(priv->text_window, cursor);
+	g_object_unref(cursor);
+	gtk_im_context_set_client_window(priv->im_context, priv->text_window);
 }
 
 static void platon_editor_widget_unrealize(GtkWidget* widget) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	gtk_widget_unregister_window(widget, priv->text_window);
+	gdk_window_destroy(priv->text_window);
 	GdkWindow* window = gtk_widget_get_window(widget);
 	gtk_widget_unregister_window(widget, window);
 	gdk_window_destroy(window);
@@ -274,9 +296,11 @@ static void platon_editor_widget_unrealize(GtkWidget* widget) {
 
 static void platon_editor_widget_size_allocate(GtkWidget* widget, GtkAllocation* allocation) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	gtk_widget_set_allocation(widget, allocation);
 	if (gtk_widget_get_realized(widget)) {
 		gdk_window_move_resize(gtk_widget_get_window(widget), allocation->x, allocation->y, allocation->width, allocation->height);
+		gdk_window_move_resize(priv->text_window, allocation->x + priv->gutter_width, allocation->y, allocation->width - priv->gutter_width, allocation->height);
 	}
 	update(self);
 }
@@ -621,6 +645,7 @@ PlatonEditorWidget* platon_editor_widget_new(GFile* file) {
 	else {
 		priv->editor = new Editor();
 	}
+	priv->gutter_width = std::round(priv->char_width * count_digits(priv->editor->get_total_lines()) + priv->font_size * (HORIZONTAL_PADDING * 2.0));
 	return self;
 }
 
