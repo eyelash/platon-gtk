@@ -147,6 +147,7 @@ typedef struct {
 	GtkAdjustment* vadjustment;
 	GtkScrollablePolicy hscroll_policy;
 	GtkScrollablePolicy vscroll_policy;
+	gint cursor_blink_time;
 	GdkWindow* text_window;
 	GFile* file;
 	Editor* editor;
@@ -161,6 +162,8 @@ typedef struct {
 	GtkGesture* drag_gesture;
 	LayoutCache* layout_cache;
 	double gutter_width;
+	bool draw_cursors;
+	guint blink_source_id;
 } PlatonEditorWidgetPrivate;
 
 G_DEFINE_TYPE_WITH_CODE(PlatonEditorWidget, platon_editor_widget, GTK_TYPE_WIDGET,
@@ -184,6 +187,38 @@ static std::size_t count_digits(std::size_t n) {
 		n /= 10;
 	}
 	return digits;
+}
+
+static gboolean blink_callback(gpointer user_data) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(user_data);
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	priv->draw_cursors = !priv->draw_cursors;
+	gtk_widget_queue_draw(GTK_WIDGET(self));
+	return G_SOURCE_CONTINUE;
+}
+
+static void start_blinking(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	if (priv->blink_source_id) {
+		g_source_remove(priv->blink_source_id);
+	}
+	if (!priv->draw_cursors) {
+		priv->draw_cursors = true;
+		gtk_widget_queue_draw(GTK_WIDGET(self));
+	}
+	priv->blink_source_id = g_timeout_add(priv->cursor_blink_time / 2, blink_callback, self);
+}
+
+static void stop_blinking(PlatonEditorWidget* self) {
+	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
+	if (priv->blink_source_id) {
+		g_source_remove(priv->blink_source_id);
+		priv->blink_source_id = 0;
+	}
+	if (priv->draw_cursors) {
+		priv->draw_cursors = false;
+		gtk_widget_queue_draw(GTK_WIDGET(self));
+	}
 }
 
 static void update(PlatonEditorWidget* self) {
@@ -305,6 +340,18 @@ static void platon_editor_widget_size_allocate(GtkWidget* widget, GtkAllocation*
 	update(self);
 }
 
+static gboolean platon_editor_widget_focus_in_event(GtkWidget* widget, GdkEventFocus* event) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
+	start_blinking(self);
+	return GDK_EVENT_PROPAGATE;
+}
+
+static gboolean platon_editor_widget_focus_out_event(GtkWidget* widget, GdkEventFocus* event) {
+	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
+	stop_blinking(self);
+	return GDK_EVENT_PROPAGATE;
+}
+
 static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 	PlatonEditorWidget* self = PLATON_EDITOR_WIDGET(widget);
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
@@ -353,11 +400,13 @@ static gboolean platon_editor_widget_draw(GtkWidget* widget, cairo_t* cr) {
 			layout.draw(cr, theme, x, y + priv->ascent, true);
 		}
 		// cursors
-		set_source(cr, theme.cursor);
-		for (std::size_t cursor: lines[row - start_row].cursors) {
-			const double x = priv->gutter_width + layout.index_to_x(cursor);
-			cairo_rectangle(cr, x - 1.0, y, 2.0, priv->line_height);
-			cairo_fill(cr);
+		if (priv->draw_cursors) {
+			set_source(cr, theme.cursor);
+			for (std::size_t cursor: lines[row - start_row].cursors) {
+				const double x = priv->gutter_width + layout.index_to_x(cursor);
+				cairo_rectangle(cr, x - 1.0, y, 2.0, priv->line_height);
+				cairo_fill(cr);
+			}
 		}
 	}
 	priv->layout_cache->collect_garbage();
@@ -388,6 +437,7 @@ static void handle_commit(GtkIMContext* im_context, gchar* text, gpointer user_d
 	priv->editor->insert_text(text);
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_press, gdouble x, gdouble y, gpointer user_data) {
@@ -417,6 +467,7 @@ static void handle_pressed(GtkGestureMultiPress* multipress_gesture, gint n_pres
 			}
 		}
 		gtk_widget_queue_draw(GTK_WIDGET(self));
+		start_blinking(self);
 	}
 }
 
@@ -434,6 +485,7 @@ static void handle_drag_update(GtkGestureDrag* drag_gesture, gdouble offset_x, g
 		const std::size_t column = layout.x_to_index(x - priv->gutter_width);
 		priv->editor->extend_selection(column, line);
 		gtk_widget_queue_draw(GTK_WIDGET(self));
+		start_blinking(self);
 	}
 }
 
@@ -442,6 +494,7 @@ static void platon_editor_widget_insert_newline(PlatonEditorWidget* self) {
 	priv->editor->insert_newline();
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_delete_backward(PlatonEditorWidget* self) {
@@ -449,6 +502,7 @@ static void platon_editor_widget_delete_backward(PlatonEditorWidget* self) {
 	priv->editor->delete_backward();
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_delete_forward(PlatonEditorWidget* self) {
@@ -456,48 +510,56 @@ static void platon_editor_widget_delete_forward(PlatonEditorWidget* self) {
 	priv->editor->delete_forward();
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_move_left(PlatonEditorWidget* self, gboolean extend_selection) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	priv->editor->move_left(extend_selection);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_move_right(PlatonEditorWidget* self, gboolean extend_selection) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	priv->editor->move_right(extend_selection);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_move_up(PlatonEditorWidget* self, gboolean extend_selection) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	priv->editor->move_up(extend_selection);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_move_down(PlatonEditorWidget* self, gboolean extend_selection) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	priv->editor->move_down(extend_selection);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_move_to_beginning_of_line(PlatonEditorWidget* self, gboolean extend_selection) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	priv->editor->move_to_beginning_of_line(extend_selection);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_move_to_end_of_line(PlatonEditorWidget* self, gboolean extend_selection) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	priv->editor->move_to_end_of_line(extend_selection);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_select_all(PlatonEditorWidget* self) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	priv->editor->select_all();
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_copy(PlatonEditorWidget* self) {
@@ -506,6 +568,7 @@ static void platon_editor_widget_copy(PlatonEditorWidget* self) {
 	gtk_clipboard_set_text(clipboard, priv->editor->copy().c_str(), -1);
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_cut(PlatonEditorWidget* self) {
@@ -514,6 +577,7 @@ static void platon_editor_widget_cut(PlatonEditorWidget* self) {
 	gtk_clipboard_set_text(clipboard, priv->editor->cut().c_str(), -1);
 	update(self);
 	gtk_widget_queue_draw(GTK_WIDGET(self));
+	start_blinking(self);
 }
 
 static void platon_editor_widget_paste(PlatonEditorWidget* self) {
@@ -524,6 +588,7 @@ static void platon_editor_widget_paste(PlatonEditorWidget* self) {
 		priv->editor->paste(text);
 		update(self);
 		gtk_widget_queue_draw(GTK_WIDGET(self));
+		start_blinking(self);
 	}, self);
 }
 
@@ -551,6 +616,8 @@ static void platon_editor_widget_class_init(PlatonEditorWidgetClass* klass) {
 	GTK_WIDGET_CLASS(klass)->realize = platon_editor_widget_realize;
 	GTK_WIDGET_CLASS(klass)->unrealize = platon_editor_widget_unrealize;
 	GTK_WIDGET_CLASS(klass)->size_allocate = platon_editor_widget_size_allocate;
+	GTK_WIDGET_CLASS(klass)->focus_in_event = platon_editor_widget_focus_in_event;
+	GTK_WIDGET_CLASS(klass)->focus_out_event = platon_editor_widget_focus_out_event;
 	GTK_WIDGET_CLASS(klass)->draw = platon_editor_widget_draw;
 	GTK_WIDGET_CLASS(klass)->key_press_event = platon_editor_widget_key_press_event;
 	GTK_WIDGET_CLASS(klass)->key_release_event = platon_editor_widget_key_release_event;
@@ -606,6 +673,7 @@ static void platon_editor_widget_init(PlatonEditorWidget* self) {
 	PlatonEditorWidgetPrivate* priv = (PlatonEditorWidgetPrivate*)platon_editor_widget_get_instance_private(self);
 	GSettings* settings = g_settings_new("org.gnome.desktop.interface");
 	gchar* monospace_font_name = g_settings_get_string(settings, "monospace-font-name");
+	priv->cursor_blink_time = g_settings_get_int(settings, "cursor-blink-time");
 	g_object_unref(settings);
 	priv->font_description = pango_font_description_from_string(monospace_font_name);
 	g_free(monospace_font_name);
@@ -646,6 +714,8 @@ PlatonEditorWidget* platon_editor_widget_new(GFile* file) {
 		priv->editor = new Editor();
 	}
 	priv->gutter_width = std::round(priv->char_width * count_digits(priv->editor->get_total_lines()) + priv->font_size * (HORIZONTAL_PADDING * 2.0));
+	priv->draw_cursors = false;
+	priv->blink_source_id = 0;
 	return self;
 }
 
